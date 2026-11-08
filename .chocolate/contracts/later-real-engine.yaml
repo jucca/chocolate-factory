@@ -1,0 +1,17 @@
+id: later-real-engine
+title: Real coding agent engine
+intent: >-
+  Deliberately excluded from V1 (spec §11.2). Replace the simulator with a live
+  agent harness that edits the repo and produces real evidence.
+acceptance_criteria:
+  - id: ac-deferred
+    statement: Not required for V1; placeholder for a future hard verify gate.
+    gates:
+      - verify
+    evidence: deferred
+constraints: []
+out_of_scope:
+  - V1 release scope.
+linked_issue: null
+milestone: later-phases
+dependencies: []

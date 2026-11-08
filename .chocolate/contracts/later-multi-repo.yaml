@@ -1,0 +1,17 @@
+id: later-multi-repo
+title: Multi-repo factory orchestration
+intent: >-
+  Deliberately excluded from V1 (spec §11.2). Coordinate contracts and runs
+  across multiple repositories from one cockpit.
+acceptance_criteria:
+  - id: ac-deferred
+    statement: Not required for V1 single-repo local cockpit.
+    gates:
+      - plan
+    evidence: deferred
+constraints: []
+out_of_scope:
+  - V1 release scope.
+linked_issue: null
+milestone: later-phases
+dependencies: []

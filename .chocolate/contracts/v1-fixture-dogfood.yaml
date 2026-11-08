@@ -1,0 +1,26 @@
+id: v1-fixture-dogfood
+title: Fixture scenario and V1 dogfood stamp
+intent: >-
+  Reproducible fixture drives issue → claim → all gates → commit-ready; this
+  repo is stamped with a V1 roadmap proving the factory eats its own cooking.
+acceptance_criteria:
+  - id: ac-e2e-fixture
+    statement: E2E fixture scenario completes without FakeIssueSource calling a real agent.
+    gates:
+      - verify
+      - commit
+    evidence: tests/e2e/fixtureScenario.test.ts
+  - id: ac-dogfood-roadmap
+    statement: Roadmap lists v1 and later-phases milestones with named contracts.
+    gates:
+      - spec
+    evidence: .chocolate/roadmap.yaml
+constraints:
+  - Fixture uses in-memory temp dirs in tests; dogfood uses this repo.
+out_of_scope:
+  - Live GitHub claim in CI without auth.
+linked_issue: null
+milestone: v1
+dependencies:
+  - v1-gates
+  - v1-cockpit-roadmap

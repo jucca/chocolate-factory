@@ -1,0 +1,17 @@
+id: later-auto-merge
+title: Auto-merge after commit gate
+intent: >-
+  Deliberately excluded from V1 (spec §11.2). Automatically open and merge PRs
+  when a run reaches commit-ready and stakeholder policy allows it.
+acceptance_criteria:
+  - id: ac-deferred
+    statement: Not required for V1 success criterion (commit-ready only).
+    gates:
+      - commit
+    evidence: deferred
+constraints: []
+out_of_scope:
+  - V1 release scope.
+linked_issue: null
+milestone: later-phases
+dependencies: []
