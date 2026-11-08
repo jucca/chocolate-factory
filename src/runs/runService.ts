@@ -139,6 +139,13 @@ export class RunService {
       if (GATE_KIND[input.gate] === 'hard') throw new HardGateOverrideError(input.gate);
       if (!input.reason || input.reason.trim() === '') throw new OverrideReasonRequiredError();
     }
+    if (run.state !== 'awaiting-decision') {
+      throw new Error(`run ${runId} is not awaiting-decision (state: ${run.state})`);
+    }
+    const expectedGate = GATE_AFTER_PHASE[run.phase];
+    if (!expectedGate || input.gate !== expectedGate) {
+      throw new Error(`gate ${input.gate} does not match current phase gate ${expectedGate ?? 'none'}`);
+    }
     const data = this.deps.files.load();
     const contract = data.contracts.find((c) => c.id === run.contractId);
     if (!contract) throw new Error(`contract ${run.contractId} invalid or missing`);
@@ -199,7 +206,7 @@ export class RunService {
         createdAt: now(),
         data: { newRevision, supersededRevision: run.contractRevision },
       });
-      this.deps.store.updateRunState(run.id, { phase: 'spec', state: 'running' });
+      this.deps.store.updateRunState(run.id, { phase: 'spec', state: 'running', contractRevision: newRevision });
     }
   }
 

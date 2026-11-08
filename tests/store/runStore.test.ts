@@ -27,4 +27,11 @@ describe('SqliteRunStore', () => {
     store.createRun({ id: 'run-2', contractId: 'feat-a', contractRevision: 'rev1', issue: null, phase: 'spec', state: 'running', currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/run-2.md' });
     expect(store.listRunsByContract('feat-a').map((r) => r.id)).toEqual(['run-2', 'run-1']);
   });
+  it('updateRunState can patch contractRevision', () => {
+    seedRun();
+    store.updateRunState('run-1', { contractRevision: 'rev2' });
+    expect(store.getRun('run-1')?.contractRevision).toBe('rev2');
+    store.updateRunState('run-1', { phase: 'plan' });
+    expect(store.getRun('run-1')?.contractRevision).toBe('rev2');
+  });
 });

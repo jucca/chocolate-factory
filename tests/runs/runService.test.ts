@@ -1,6 +1,6 @@
 // tests/runs/runService.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunService, HardGateOverrideError, OverrideReasonRequiredError } from '../../src/runs/runService.js';
@@ -46,6 +46,7 @@ describe('RunService', () => {
       contractRevision: 'rev1',
     });
     expect(run).toMatchObject({ contractId: 'feat-a', phase: 'spec', currentAttempt: 1, state: 'running' });
+    expect(existsSync(join(root, run.execPlanRef))).toBe(true);
   });
   it('advance stops at the spec gate awaiting decision; approve advances', async () => {
     const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
@@ -73,6 +74,23 @@ describe('RunService', () => {
     const events = store.events(run.id);
     expect(events.at(-1)?.type).toBe('approvals_invalidated');
     expect(store.getRun(run.id)?.phase).toBe('spec');
+    expect(store.getRun(run.id)?.contractRevision).toBe('rev2');
+  });
+  it('actOnGate rejects when not awaiting decision or wrong gate', async () => {
+    const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
+    await expect(svc.actOnGate(run.id, { gate: 'spec', action: 'approve' })).rejects.toThrow(/awaiting-decision/);
+    await svc.advance(run.id);
+    await expect(svc.actOnGate(run.id, { gate: 'plan', action: 'approve' })).rejects.toThrow(/gate .* does not match/);
+  });
+  it('actOnGate does not proceed on failed or commit-ready runs', async () => {
+    const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
+    for (const gate of ['spec', 'plan', 'verify', 'commit'] as const) {
+      await svc.advance(run.id);
+      await svc.actOnGate(run.id, { gate, action: 'approve' });
+    }
+    await svc.advance(run.id);
+    expect(store.getRun(run.id)?.state).toBe('commit-ready');
+    await expect(svc.actOnGate(run.id, { gate: 'commit', action: 'approve' })).rejects.toThrow(/awaiting-decision/);
   });
   it('full lifecycle reaches commit-ready only after hard-gate approvals', async () => {
     const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });

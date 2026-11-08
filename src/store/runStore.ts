@@ -28,10 +28,18 @@ export class SqliteRunStore {
       VALUES (?,?,?,?,?,?,?,?,?)`).run(input.id, input.contractId, input.contractRevision, input.issue ? JSON.stringify(input.issue) : null, input.phase, input.state, input.currentAttempt, input.execPlanRef, createdAt);
     return { ...input, createdAt };
   }
-  updateRunState(id: string, patch: { phase?: Phase; state?: RunState; currentAttempt?: number }): void {
-    const cur = this.getRun(id); if (!cur) throw new Error(`unknown run ${id}`);
-    this.db.prepare('UPDATE runs SET phase=?, state=?, current_attempt=? WHERE id=?')
-      .run(patch.phase ?? cur.phase, patch.state ?? cur.state, patch.currentAttempt ?? cur.currentAttempt, id);
+  updateRunState(id: string, patch: { phase?: Phase; state?: RunState; currentAttempt?: number; contractRevision?: string }): void {
+    const cur = this.getRun(id);
+    if (!cur) throw new Error(`unknown run ${id}`);
+    this.db
+      .prepare('UPDATE runs SET phase=?, state=?, current_attempt=?, contract_revision=? WHERE id=?')
+      .run(
+        patch.phase ?? cur.phase,
+        patch.state ?? cur.state,
+        patch.currentAttempt ?? cur.currentAttempt,
+        patch.contractRevision ?? cur.contractRevision,
+        id,
+      );
   }
   getRun(id: string): RunRecord | null {
     const r = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id) as Record<string, unknown> | undefined;
