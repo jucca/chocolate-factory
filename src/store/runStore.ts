@@ -49,7 +49,7 @@ export class SqliteRunStore {
     return (this.db.prepare('SELECT * FROM runs ORDER BY created_at DESC').all() as Record<string, unknown>[]).map((r) => this.toRun(r));
   }
   listRunsByContract(contractId: string): RunRecord[] {
-    return (this.db.prepare('SELECT * FROM runs WHERE contract_id=? ORDER BY created_at DESC').all(contractId) as Record<string, unknown>[]).map((r) => this.toRun(r));
+    return (this.db.prepare('SELECT * FROM runs WHERE contract_id=? ORDER BY created_at DESC, id DESC').all(contractId) as Record<string, unknown>[]).map((r) => this.toRun(r));
   }
   startAttempt(runId: string, attempt: number): void { this.updateRunState(runId, { currentAttempt: attempt }); }
   appendEvent(e: Omit<RunEvent, 'id'>): RunEvent {

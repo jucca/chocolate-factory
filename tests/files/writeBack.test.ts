@@ -25,4 +25,10 @@ describe('writeBack', () => {
     expect(() => saveContract(root, parseContract(contract))).toThrowError(UnparseableFileError);
     expect(readFileSync(file(), 'utf8')).toBe('id: [unclosed\n');
   });
+  it('creates a new contract file when missing', () => {
+    const missing = { ...parseContract(contract), id: 'feat-new' };
+    const rev = saveContract(root, missing);
+    expect(readFileSync(join(root, '.chocolate/contracts/feat-new.yaml'), 'utf8')).toBeTruthy();
+    expect(rev).toBe(contractRevision(stringify(missing)));
+  });
 });

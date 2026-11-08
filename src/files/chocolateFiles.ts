@@ -25,3 +25,5 @@ export function loadChocolate(repoRoot: string): ChocolateData {
   catch (e) { roadmapError = e instanceof Error ? e.message : String(e); }
   return { contracts, invalidContracts, roadmap, roadmapError, config, crossRefErrors: roadmap ? validateCrossRefs(contracts, roadmap) : [] };
 }
+
+export { saveContract, saveRoadmap, contractRevision, UnparseableFileError } from './writeBack.js';
