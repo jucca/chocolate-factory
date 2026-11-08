@@ -14,4 +14,5 @@ export const api = {
   getRun: (id: string) => fetch(`/api/runs/${id}`).then((r) => json<RunDetailDTO>(r)),
   advance: (id: string) => fetch(`/api/runs/${id}/advance`, { method: 'POST' }).then((r) => json<RunDTO>(r)),
   actOnGate: (id: string, body: { gate: string; action: string; reason?: string }) => fetch(`/api/runs/${id}/gate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<RunDTO>(r)),
+  saveContract: (contract: unknown) => fetch(`/api/contracts/${(contract as { id: string }).id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(contract) }).then((r) => json<{ revision: string }>(r)),
 };
