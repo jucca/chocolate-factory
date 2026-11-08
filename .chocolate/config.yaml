@@ -1,0 +1,9 @@
+issue_label: chocolate:ready
+issue_source:
+  repo: ""
+gates:
+  spec: soft
+  plan: soft
+  verify: hard
+  commit: hard
+runtime: .chocolate/runtime

@@ -1,0 +1,29 @@
+id: v1-gates
+title: Soft and hard gates with fail-closed rules
+intent: >-
+  Run workflow stops at gates for stakeholder decisions; soft gates allow
+  override with a recorded reason; hard gates fail closed on evaluation failure.
+acceptance_criteria:
+  - id: ac-gate-evaluator
+    statement: Gate evaluator marks pass/fail from acceptance criteria and evidence.
+    gates:
+      - verify
+    evidence: tests/gates/gateEvaluator.test.ts
+  - id: ac-http-gate-actions
+    statement: Cockpit POST /api/runs/:id/gate enforces hard-gate override rejection.
+    gates:
+      - verify
+    evidence: tests/server/app.test.ts
+  - id: ac-new-attempt
+    statement: Failed hard gate transitions to failed state; operator can start a new attempt.
+    gates:
+      - verify
+    evidence: tests/runs/runService.test.ts
+constraints:
+  - Hard gates verify and commit cannot be overridden.
+out_of_scope:
+  - Automated merge after commit gate.
+linked_issue: null
+milestone: v1
+dependencies:
+  - v1-runs-simulator

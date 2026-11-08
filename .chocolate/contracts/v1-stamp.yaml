@@ -1,0 +1,23 @@
+id: v1-stamp
+title: Stamp CLI and repo scaffolding
+intent: >-
+  Operators can stamp a git repo once with Chocolate Factory directories,
+  templates, config, and AGENTS map without duplicating an existing stamp.
+acceptance_criteria:
+  - id: ac-stamp-once
+    statement: Stamp creates expected paths and refuses a second stamp on the same repo.
+    gates:
+      - verify
+    evidence: tests/stamp/stamp.test.ts
+  - id: ac-runtime-gitignored
+    statement: Stamp appends .chocolate/runtime to .gitignore when missing.
+    gates:
+      - spec
+    evidence: gitignore check in stamp test
+constraints:
+  - Must not overwrite an existing .chocolate tree.
+out_of_scope:
+  - Remote template registries.
+linked_issue: null
+milestone: v1
+dependencies: []

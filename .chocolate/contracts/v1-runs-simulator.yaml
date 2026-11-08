@@ -1,0 +1,24 @@
+id: v1-runs-simulator
+title: Runs, SQLite store, and simulator engine
+intent: >-
+  Operators claim issues into runs persisted locally; the simulator engine
+  advances phases without calling a real coding agent.
+acceptance_criteria:
+  - id: ac-run-lifecycle
+    statement: Claim creates a run, exec plan artifact, and append-only events.
+    gates:
+      - verify
+    evidence: tests/runs/runService.test.ts
+  - id: ac-simulator-phases
+    statement: Simulator runs implement and test phases and records evidence.
+    gates:
+      - verify
+    evidence: tests/engine/simulator.test.ts
+constraints:
+  - SQLite runtime DB is local-only and gitignored.
+out_of_scope:
+  - Real agent execution.
+linked_issue: null
+milestone: v1
+dependencies:
+  - v1-stamp

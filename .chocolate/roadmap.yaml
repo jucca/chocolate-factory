@@ -1,0 +1,24 @@
+milestones:
+  - id: v1
+    title: V1 — Local Chocolate Factory
+    intent: >-
+      Ship the local cockpit, simulator run engine, gate workflow, stamp CLI,
+      and the fixture e2e that proves commit-ready without a live agent.
+    contracts:
+      - v1-stamp
+      - v1-cockpit-roadmap
+      - v1-runs-simulator
+      - v1-gates
+      - v1-fixture-dogfood
+  - id: later-phases
+    title: Later phases (explicitly out of V1)
+    intent: >-
+      Named capabilities deliberately excluded from V1 per spec §11.2; tracked
+      so stakeholders see what comes next without expecting them in this release.
+    contracts:
+      - later-real-engine
+      - later-auto-merge
+      - later-webhooks
+      - later-multi-repo
+      - later-hosted-cockpit
+      - later-harness-automation
