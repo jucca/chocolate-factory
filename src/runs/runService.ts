@@ -5,7 +5,7 @@ import type { SqliteRunStore } from '../store/runStore.js';
 import { evaluateGate } from '../gates/gateEvaluator.js';
 import type { RunEngine } from '../engine/runEngine.js';
 import type { ChocolateData } from '../files/chocolateFiles.js';
-import { writeExecPlan } from './execPlan.js';
+import { appendExecPlanLog, writeExecPlan } from './execPlan.js';
 
 export class HardGateOverrideError extends Error {
   constructor(gate: GateId) {
@@ -80,6 +80,11 @@ export class RunService {
             data: {},
           });
         for (const ev of out.evidence) this.deps.store.appendEvidence({ ...ev, runId, createdAt: now() });
+        appendExecPlanLog(
+          this.deps.repoRoot,
+          run.execPlanRef,
+          `Completed ${run.phase} phase (attempt ${run.currentAttempt}).`,
+        );
       } catch (e) {
         this.failPhase(run, e instanceof Error ? e.message : String(e));
         return this.mustRun(runId);
@@ -169,6 +174,11 @@ export class RunService {
       contractRevision: run.contractRevision,
       createdAt: now(),
     });
+    appendExecPlanLog(
+      this.deps.repoRoot,
+      run.execPlanRef,
+      `Gate ${input.gate}: ${input.action} (attempt ${run.currentAttempt}).`,
+    );
     if (input.action === 'rework') return this.startNewAttempt(runId, input.gate === 'spec' ? 'spec' : 'plan');
     if (input.gate === 'commit') {
       this.deps.store.updateRunState(runId, { state: 'commit-ready' });

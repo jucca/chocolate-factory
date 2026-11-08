@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Contract, RunRecord } from '../domain/types.js';
 
@@ -25,4 +25,16 @@ export function writeExecPlan(repoRoot: string, run: RunRecord, contract: Contra
   const dir = join(repoRoot, '.chocolate', 'exec-plans');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(repoRoot, run.execPlanRef), renderExecPlan(run, contract));
+}
+
+export function appendExecPlanLog(repoRoot: string, execPlanRef: string, line: string): void {
+  const path = join(repoRoot, execPlanRef);
+  const body = readFileSync(path, 'utf8');
+  const entry = line.startsWith('-') ? line : `- ${line}`;
+  const trimmed = entry.endsWith('\n') ? entry : `${entry}\n`;
+  if (!body.includes('## Log')) {
+    appendFileSync(path, `\n## Log\n${trimmed}`);
+    return;
+  }
+  appendFileSync(path, trimmed);
 }

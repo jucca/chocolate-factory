@@ -20,6 +20,9 @@ export function RunDetail({ runId }: { runId: string }) {
       <p>Phase: {detail.run.phase} · State: {detail.run.state} · Attempt: {detail.run.currentAttempt}</p>
       <p>Exec plan: <code>{detail.run.execPlanRef}</code></p>
       <button onClick={() => api.advance(runId).then(reload)}>Advance phase</button>
+      {detail.run.state === 'failed' && (
+        <button onClick={() => api.startNewAttempt(runId, 'spec').then(reload)}>New Attempt</button>
+      )}
       {error && <p role="alert">{error}</p>}
       <h4>Gate actions</h4>
       {GATES.map((gate) => (

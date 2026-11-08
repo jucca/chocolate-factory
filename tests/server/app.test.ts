@@ -52,6 +52,51 @@ describe('cockpit API', () => {
     const ids = roadmap.json().milestones[0].contracts.map((c: { id: string }) => c.id);
     expect(ids).toContain(`issue-${issue.number}`);
   });
+  it('GET /api/contracts/:id returns a contract by id', async () => {
+    await app.inject({ method: 'POST', url: '/api/runs/claim', payload: { issue } });
+    const res = await app.inject({ method: 'GET', url: `/api/contracts/issue-${issue.number}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().id).toBe(`issue-${issue.number}`);
+  });
+  it('PUT /api/contracts/:id rejects when URL id !== body.id', async () => {
+    await app.inject({ method: 'POST', url: '/api/runs/claim', payload: { issue } });
+    const contract = loadChocolate(root).contracts.find((c) => c.id === `issue-${issue.number}`)!;
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/contracts/wrong-id',
+      payload: { ...contract, id: contract.id },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/does not match/i);
+  });
+  it('GET /api/roadmap sets runtimeAvailable false when store fails', async () => {
+    const brokenStore = Object.create(store) as SqliteRunStore;
+    brokenStore.listRuns = () => {
+      throw new Error('database unavailable');
+    };
+    const files = {
+      load: () => loadChocolate(root),
+      readContractFile: (id: string) => readFileSync(join(root, `.chocolate/contracts/${id}.yaml`), 'utf8'),
+      saveContract: (c: Contract) => saveContract(root, c),
+    };
+    const runService = new RunService({ store: brokenStore, engine: new SimulatorRunEngine(), files, config: DEFAULT_CONFIG, repoRoot: root });
+    const brokenApp = buildApp({ repoRoot: root, store: brokenStore, runService, issueSource: new FakeIssueSource([issue]), config: DEFAULT_CONFIG });
+    const res = await brokenApp.inject({ method: 'GET', url: '/api/roadmap' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().runtimeAvailable).toBe(false);
+    expect(res.json().milestones[0].contracts.every((c: { status: string }) => c.status === 'not-started')).toBe(true);
+    await brokenApp.close();
+  });
+  it('POST /api/runs/:id/new-attempt starts a new attempt from a phase', async () => {
+    const claim = await app.inject({ method: 'POST', url: '/api/runs/claim', payload: { issue } });
+    const runId = claim.json().id as string;
+    store.updateRunState(runId, { state: 'failed', phase: 'test' });
+    const res = await app.inject({ method: 'POST', url: `/api/runs/${runId}/new-attempt`, payload: { fromPhase: 'spec' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().currentAttempt).toBe(2);
+    expect(res.json().state).toBe('running');
+    expect(res.json().phase).toBe('spec');
+  });
   it('claim → advance → spec gate approve flows over HTTP', async () => {
     const claim = await app.inject({ method: 'POST', url: '/api/runs/claim', payload: { issue } });
     expect(claim.statusCode).toBe(200);

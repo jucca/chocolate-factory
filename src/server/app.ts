@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Contract, FactoryConfig, GateId, IssueRef } from '../domain/types.js';
+import type { Contract, FactoryConfig, GateId, IssueRef, Phase } from '../domain/types.js';
 import { loadChocolate, saveContract, saveRoadmap } from '../files/chocolateFiles.js';
 import { contractRevision } from '../files/writeBack.js';
 import type { SqliteRunStore } from '../store/runStore.js';
@@ -19,11 +19,17 @@ export function buildApp(deps: {
   const app = Fastify();
   app.get('/api/roadmap', async () => {
     const data = loadChocolate(deps.repoRoot);
+    let runtimeAvailable = true;
     const runsByContract = new Map<string, ReturnType<SqliteRunStore['listRunsByContract']>[number]>();
+  try {
+    deps.store.listRuns();
     for (const c of data.contracts) {
       const runs = deps.store.listRunsByContract(c.id);
       if (runs[0]) runsByContract.set(c.id, runs[0]);
     }
+  } catch {
+    runtimeAvailable = false;
+  }
     const pending = new Set(
       [...runsByContract.entries()].filter(([, r]) => r.state === 'awaiting-decision').map(([id]) => id),
     );
@@ -40,7 +46,7 @@ export function buildApp(deps: {
       : { milestones: [], invalidFiles: data.invalidContracts.map((i) => i.file) };
     return {
       ...view,
-      runtimeAvailable: true,
+      runtimeAvailable,
       crossRefErrors: data.crossRefErrors,
       roadmapError: data.roadmapError,
     };
@@ -101,6 +107,16 @@ export function buildApp(deps: {
     };
   });
   app.post('/api/runs/:id/advance', async (req) => deps.runService.advance((req.params as { id: string }).id));
+  app.post('/api/runs/:id/new-attempt', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { fromPhase } = req.body as { fromPhase: Phase };
+    if (!fromPhase) return reply.code(400).send({ error: 'fromPhase is required' });
+    try {
+      return deps.runService.startNewAttempt(id, fromPhase);
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
   app.post('/api/runs/:id/gate', async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = req.body as { gate: GateId; action: 'approve' | 'rework' | 'override'; reason?: string };
@@ -113,7 +129,11 @@ export function buildApp(deps: {
     }
   });
   app.put('/api/contracts/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
     const contract = req.body as Contract;
+    if (contract.id !== id) {
+      return reply.code(400).send({ error: `contract id ${contract.id} does not match URL ${id}` });
+    }
     try {
       const revision = saveContract(deps.repoRoot, contract);
       deps.runService.invalidateForContract(contract.id, revision);

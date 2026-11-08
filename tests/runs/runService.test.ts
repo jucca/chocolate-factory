@@ -1,6 +1,6 @@
 // tests/runs/runService.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunService, HardGateOverrideError, OverrideReasonRequiredError } from '../../src/runs/runService.js';
@@ -54,6 +54,15 @@ describe('RunService', () => {
     expect(stopped.state).toBe('awaiting-decision');
     const next = await svc.actOnGate(run.id, { gate: 'spec', action: 'approve' });
     expect(next.state).toBe('running');
+  });
+  it('advance appends phase completion lines to the exec-plan log', async () => {
+    const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
+    await svc.advance(run.id);
+    const plan = readFileSync(join(root, run.execPlanRef), 'utf8');
+    expect(plan).toContain('Completed spec phase');
+    await svc.actOnGate(run.id, { gate: 'spec', action: 'approve' });
+    const afterGate = readFileSync(join(root, run.execPlanRef), 'utf8');
+    expect(afterGate).toContain('Gate spec: approve');
   });
   it('soft override requires a reason and records it verbatim', async () => {
     const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
