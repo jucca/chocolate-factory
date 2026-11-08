@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Contract, FactoryConfig, GateId, IssueRef } from '../domain/types.js';
-import { loadChocolate, saveContract } from '../files/chocolateFiles.js';
+import { loadChocolate, saveContract, saveRoadmap } from '../files/chocolateFiles.js';
 import { contractRevision } from '../files/writeBack.js';
 import type { SqliteRunStore } from '../store/runStore.js';
 import { buildRoadmapView } from '../domain/derivedStatus.js';
@@ -60,7 +60,7 @@ export function buildApp(deps: {
       (c) => c.linked_issue?.number === issue.number && c.linked_issue?.repo === issue.repo,
     );
     if (!contract) {
-      contract = {
+      const draft: Contract = {
         id: `issue-${issue.number}`,
         title: `Issue #${issue.number}`,
         intent: `Imported from ${issue.url} — operator to complete intent.`,
@@ -71,7 +71,15 @@ export function buildApp(deps: {
         milestone: data.roadmap?.milestones[0]?.id ?? 'v1',
         dependencies: [],
       };
-      saveContract(deps.repoRoot, contract);
+      contract = draft;
+      saveContract(deps.repoRoot, draft);
+      if (data.roadmap) {
+        const milestone = data.roadmap.milestones.find((m) => m.id === draft.milestone);
+        if (milestone && !milestone.contracts.includes(draft.id)) {
+          milestone.contracts.push(draft.id);
+          saveRoadmap(deps.repoRoot, data.roadmap);
+        }
+      }
     }
     if (data.invalidContracts.length > 0)
       return reply.code(400).send({ error: `invalid contract files: ${data.invalidContracts.map((i) => i.file).join(', ')}` });

@@ -45,6 +45,13 @@ describe('cockpit API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/inbox' });
     expect(res.json()).toMatchObject({ kind: 'fresh', issues: [{ number: 7 }] });
   });
+  it('claim registers draft contract on roadmap and still returns 200', async () => {
+    const claim = await app.inject({ method: 'POST', url: '/api/runs/claim', payload: { issue } });
+    expect(claim.statusCode).toBe(200);
+    const roadmap = await app.inject({ method: 'GET', url: '/api/roadmap' });
+    const ids = roadmap.json().milestones[0].contracts.map((c: { id: string }) => c.id);
+    expect(ids).toContain(`issue-${issue.number}`);
+  });
   it('claim → advance → spec gate approve flows over HTTP', async () => {
     const claim = await app.inject({ method: 'POST', url: '/api/runs/claim', payload: { issue } });
     expect(claim.statusCode).toBe(200);

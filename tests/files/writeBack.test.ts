@@ -31,4 +31,13 @@ describe('writeBack', () => {
     expect(readFileSync(join(root, '.chocolate/contracts/feat-new.yaml'), 'utf8')).toBeTruthy();
     expect(rev).toBe(contractRevision(stringify(missing)));
   });
+  it('does not modify roadmap.yaml when saving a new or existing contract', () => {
+    const roadmapPath = join(root, '.chocolate/roadmap.yaml');
+    const roadmapBefore = { milestones: [{ id: 'm1', title: 'M1', intent: 'x', contracts: ['feat-a'] }] };
+    writeFileSync(roadmapPath, stringify(roadmapBefore));
+    saveContract(root, { ...parseContract(contract), id: 'feat-new', milestone: 'm1' });
+    expect(parse(readFileSync(roadmapPath, 'utf8'))).toEqual(roadmapBefore);
+    saveContract(root, { ...parseContract(contract), title: 'edited' });
+    expect(parse(readFileSync(roadmapPath, 'utf8'))).toEqual(roadmapBefore);
+  });
 });

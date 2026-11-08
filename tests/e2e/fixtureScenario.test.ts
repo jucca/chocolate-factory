@@ -8,7 +8,7 @@ import { SqliteRunStore } from '../../src/store/runStore.js';
 import { RunService } from '../../src/runs/runService.js';
 import { SimulatorRunEngine } from '../../src/engine/simulator.js';
 import { FakeIssueSource } from '../../src/issues/issueSource.js';
-import { loadChocolate, saveContract } from '../../src/files/chocolateFiles.js';
+import { loadChocolate, saveContract, saveRoadmap } from '../../src/files/chocolateFiles.js';
 import { contractRevision } from '../../src/files/writeBack.js';
 import { DEFAULT_CONFIG, type Contract } from '../../src/domain/types.js';
 
@@ -19,6 +19,14 @@ beforeEach(() => {
   const contract: Contract = { id: 'issue-7', title: 'Issue #7', intent: 'Fixture feature.', constraints: [], out_of_scope: [], linked_issue: issue, milestone: 'v1', dependencies: [],
     acceptance_criteria: [{ id: 'ac-1', statement: 'Fixture works end to end', gates: ['spec', 'plan', 'verify', 'commit'], evidence: 'verification-check' }] };
   saveContract(root, contract);
+  const chocolate = loadChocolate(root);
+  if (chocolate.roadmap) {
+    const m = chocolate.roadmap.milestones.find((ms) => ms.id === 'v1');
+    if (m && !m.contracts.includes('issue-7')) {
+      m.contracts.push('issue-7');
+      saveRoadmap(root, chocolate.roadmap);
+    }
+  }
   store = new SqliteRunStore(join(root, '.chocolate/runtime/cf.db'));
   const files = { load: () => loadChocolate(root), readContractFile: (id: string) => readFileSync(join(root, `.chocolate/contracts/${id}.yaml`), 'utf8'), saveContract: (c: Contract) => saveContract(root, c) };
   const runService = new RunService({ store, engine: new SimulatorRunEngine(), files, config: DEFAULT_CONFIG, repoRoot: root });

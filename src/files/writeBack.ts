@@ -25,20 +25,6 @@ export function saveContract(repoRoot: string, contract: Contract): string {
   mkdirSync(dir, { recursive: true });
   const content = stringify(contract);
   writeFileSync(file, content);
-  const roadmapPath = join(repoRoot, '.chocolate', 'roadmap.yaml');
-  if (existsSync(roadmapPath)) {
-    try {
-      const roadmap = parseRoadmap(parse(readFileSync(roadmapPath, 'utf8')));
-      const milestone = roadmap.milestones.find((m) => m.id === contract.milestone);
-      if (milestone && !milestone.contracts.includes(contract.id)) {
-        milestone.contracts.push(contract.id);
-        const roadmapContent = stringify(roadmap);
-        writeFileSync(roadmapPath, roadmapContent);
-      }
-    } catch {
-      /* leave roadmap unchanged when unparseable */
-    }
-  }
   return contractRevision(content);
 }
 export function saveRoadmap(repoRoot: string, roadmap: Roadmap): void {
