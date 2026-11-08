@@ -32,4 +32,38 @@ describe('evaluateGate', () => {
     const r = evaluateGate({ ...base, gate: 'spec', evidence: [ev({ phase: 'spec', producerPhase: 'spec', kind: 'spec-summary', criterionIds: ['ac-1'] })] });
     expect(r.outcome).toBe('pass');
   });
+  it('fails closed when no acceptance criteria map to the gate', () => {
+    const r = evaluateGate({ ...base, gate: 'plan' });
+    expect(r.outcome).toBe('fail');
+    expect(r.reasons.join(' ')).toMatch(/no acceptance criteria map to gate plan/);
+  });
+  it('commit requires verify-produced verification-check evidence, not implement self-report', () => {
+    const r = evaluateGate({
+      ...base,
+      gate: 'commit',
+      evidence: [ev({ producerPhase: 'implement', phase: 'implement', criterionIds: ['ac-2'] })],
+      dependencyStatuses: ['commit-ready'],
+    });
+    expect(r.outcome).toBe('fail');
+    expect(r.missingCriterionIds).toEqual(['ac-2']);
+  });
+  it('commit rejects non-verification-check kinds even from verify producer', () => {
+    const r = evaluateGate({
+      ...base,
+      gate: 'commit',
+      evidence: [ev({ producerPhase: 'verify', phase: 'verify', kind: 'spec-summary', criterionIds: ['ac-2'] })],
+      dependencyStatuses: ['commit-ready'],
+    });
+    expect(r.outcome).toBe('fail');
+    expect(r.missingCriterionIds).toEqual(['ac-2']);
+  });
+  it('passes commit when mapped criteria have verify evidence and dependencies are satisfied', () => {
+    const r = evaluateGate({
+      ...base,
+      gate: 'commit',
+      evidence: [ev({ criterionIds: ['ac-2'] })],
+      dependencyStatuses: ['commit-ready'],
+    });
+    expect(r).toMatchObject({ outcome: 'pass', missingCriterionIds: [], passedCriterionIds: ['ac-2'] });
+  });
 });
