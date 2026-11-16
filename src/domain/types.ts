@@ -15,17 +15,20 @@ export interface Contract {
 }
 export interface Milestone { id: string; title: string; intent: string; contracts: string[]; }
 export interface Roadmap { milestones: Milestone[]; }
+export interface WorkerCommand { command: string[]; }
 export interface FactoryConfig {
   issue_label: string;
   issue_source: { repo: string };
   gates: Record<GateId, 'soft' | 'hard'>;
   runtime: string;
+  workers: { default: WorkerCommand; implement: WorkerCommand };
 }
 export const DEFAULT_CONFIG: FactoryConfig = {
   issue_label: 'chocolate:ready',
   issue_source: { repo: '' },
   gates: { ...GATE_KIND },
   runtime: '.chocolate/runtime',
+  workers: { default: { command: [] }, implement: { command: [] } },
 };
 
 export type ContractStatus =

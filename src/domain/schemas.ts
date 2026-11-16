@@ -30,10 +30,16 @@ const contractSchema = z.object({
 const roadmapSchema = z.object({
   milestones: z.array(z.object({ id: z.string().min(1), title: z.string().min(1), intent: z.string(), contracts: z.array(z.string()) })),
 });
+const workerCommand = z.object({ command: z.array(z.string()) });
+const workersSchema = z.object({
+  default: workerCommand,
+  implement: workerCommand,
+}).default({ default: { command: [] }, implement: { command: [] } });
 const configSchema = z.object({
   issue_label: z.string().min(1), issue_source: z.object({ repo: z.string() }),
   gates: z.object({ spec: z.enum(['soft', 'hard']), plan: z.enum(['soft', 'hard']), verify: z.enum(['soft', 'hard']), commit: z.enum(['soft', 'hard']) }),
   runtime: z.string().min(1),
+  workers: workersSchema,
 }).superRefine((cfg, ctx) => {
   (Object.keys(GATE_KIND) as GateId[]).forEach((g) => {
     if (GATE_KIND[g] === 'hard' && cfg.gates[g] !== 'hard')
