@@ -35,11 +35,14 @@ export type ContractStatus =
   | 'invalid' | 'blocked' | 'not-started' | 'in-progress'
   | 'in-review' | 'commit-ready' | 'failed' | 'done';
 export type RunState = 'running' | 'awaiting-decision' | 'failed' | 'commit-ready';
+export type Flow = 'feature' | 'bug';
+export type EngineKind = 'simulator' | 'playbook';
 
 export interface RunRecord {
   id: string; contractId: string; contractRevision: string;
   issue: IssueRef | null; phase: Phase; state: RunState;
   currentAttempt: number; execPlanRef: string; createdAt: string;
+  flow: Flow; engine: EngineKind;
 }
 export interface RunEvent {
   id: string; runId: string; attempt: number; type: string;

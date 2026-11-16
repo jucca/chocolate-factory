@@ -13,7 +13,8 @@ export class SqliteRunStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, contract_id TEXT NOT NULL, contract_revision TEXT NOT NULL,
         issue TEXT, phase TEXT NOT NULL, state TEXT NOT NULL, current_attempt INTEGER NOT NULL,
-        exec_plan_ref TEXT NOT NULL, created_at TEXT NOT NULL);
+        exec_plan_ref TEXT NOT NULL, created_at TEXT NOT NULL,
+        flow TEXT NOT NULL DEFAULT 'feature', engine TEXT NOT NULL DEFAULT 'simulator');
       CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, attempt INTEGER NOT NULL, type TEXT NOT NULL,
         phase TEXT, message TEXT NOT NULL, created_at TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, attempt INTEGER NOT NULL, phase TEXT NOT NULL,
@@ -21,11 +22,15 @@ export class SqliteRunStore {
       CREATE TABLE IF NOT EXISTS gate_decisions (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, attempt INTEGER NOT NULL, gate TEXT NOT NULL,
         evaluation_outcome TEXT NOT NULL, action TEXT NOT NULL, reason TEXT, contract_revision TEXT NOT NULL, created_at TEXT NOT NULL);
     `);
+    const cols = this.db.prepare(`PRAGMA table_info(runs)`).all() as { name: string }[];
+    const names = new Set(cols.map((c) => c.name));
+    if (!names.has('flow')) this.db.exec(`ALTER TABLE runs ADD COLUMN flow TEXT NOT NULL DEFAULT 'feature'`);
+    if (!names.has('engine')) this.db.exec(`ALTER TABLE runs ADD COLUMN engine TEXT NOT NULL DEFAULT 'simulator'`);
   }
   createRun(input: Omit<RunRecord, 'createdAt'>): RunRecord {
     const createdAt = new Date().toISOString();
-    this.db.prepare(`INSERT INTO runs (id,contract_id,contract_revision,issue,phase,state,current_attempt,exec_plan_ref,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(input.id, input.contractId, input.contractRevision, input.issue ? JSON.stringify(input.issue) : null, input.phase, input.state, input.currentAttempt, input.execPlanRef, createdAt);
+    this.db.prepare(`INSERT INTO runs (id,contract_id,contract_revision,issue,phase,state,current_attempt,exec_plan_ref,created_at,flow,engine)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(input.id, input.contractId, input.contractRevision, input.issue ? JSON.stringify(input.issue) : null, input.phase, input.state, input.currentAttempt, input.execPlanRef, createdAt, input.flow, input.engine);
     return { ...input, createdAt };
   }
   updateRunState(id: string, patch: { phase?: Phase; state?: RunState; currentAttempt?: number; contractRevision?: string }): void {
@@ -86,6 +91,7 @@ export class SqliteRunStore {
   private toRun(r: Record<string, unknown>): RunRecord {
     return { id: String(r.id), contractId: String(r.contract_id), contractRevision: String(r.contract_revision),
       issue: r.issue ? (JSON.parse(String(r.issue)) as RunRecord['issue']) : null, phase: r.phase as Phase,
-      state: r.state as RunState, currentAttempt: Number(r.current_attempt), execPlanRef: String(r.exec_plan_ref), createdAt: String(r.created_at) };
+      state: r.state as RunState, currentAttempt: Number(r.current_attempt), execPlanRef: String(r.exec_plan_ref), createdAt: String(r.created_at),
+      flow: r.flow as RunRecord['flow'], engine: r.engine as RunRecord['engine'] };
   }
 }

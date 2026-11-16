@@ -8,7 +8,7 @@ beforeEach(() => { store = new SqliteRunStore(join(mkdtempSync(join(tmpdir(), 'c
 afterEach(() => store.close());
 
 function seedRun() {
-  return store.createRun({ id: 'run-1', contractId: 'feat-a', contractRevision: 'rev1', issue: null, phase: 'spec', state: 'running', currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/run-1.md' });
+  return store.createRun({ id: 'run-1', contractId: 'feat-a', contractRevision: 'rev1', issue: null, phase: 'spec', state: 'running', currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/run-1.md', flow: 'feature' as const, engine: 'simulator' as const });
 }
 describe('SqliteRunStore', () => {
   it('creates and reads a run', () => { expect(seedRun().id).toBe('run-1'); expect(store.getRun('run-1')?.contractId).toBe('feat-a'); });
@@ -24,7 +24,7 @@ describe('SqliteRunStore', () => {
   });
   it('lists runs by contract newest first', () => {
     seedRun();
-    store.createRun({ id: 'run-2', contractId: 'feat-a', contractRevision: 'rev1', issue: null, phase: 'spec', state: 'running', currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/run-2.md' });
+    store.createRun({ id: 'run-2', contractId: 'feat-a', contractRevision: 'rev1', issue: null, phase: 'spec', state: 'running', currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/run-2.md', flow: 'feature' as const, engine: 'simulator' as const });
     expect(store.listRunsByContract('feat-a').map((r) => r.id)).toEqual(['run-2', 'run-1']);
   });
   it('updateRunState can patch contractRevision', () => {
@@ -33,5 +33,18 @@ describe('SqliteRunStore', () => {
     expect(store.getRun('run-1')?.contractRevision).toBe('rev2');
     store.updateRunState('run-1', { phase: 'plan' });
     expect(store.getRun('run-1')?.contractRevision).toBe('rev2');
+  });
+  it('round-trips flow and engine and defaults legacy rows', () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), 'cf-')), 'legacy.db');
+    const legacy = new SqliteRunStore(dbPath);
+    legacy.createRun({
+      id: 'run-legacy', contractId: 'feat-a', contractRevision: 'rev1', issue: null,
+      phase: 'spec', state: 'running', currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/run-legacy.md',
+      flow: 'bug', engine: 'playbook',
+    });
+    legacy.close();
+    const reopened = new SqliteRunStore(dbPath);
+    expect(reopened.getRun('run-legacy')).toMatchObject({ flow: 'bug', engine: 'playbook' });
+    reopened.close();
   });
 });

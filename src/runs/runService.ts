@@ -42,6 +42,8 @@ export class RunService {
       state: 'running',
       currentAttempt: 1,
       execPlanRef: `.chocolate/exec-plans/${id}.md`,
+      flow: 'feature',
+      engine: 'simulator',
     });
     this.deps.store.appendEvent({
       runId: id,
