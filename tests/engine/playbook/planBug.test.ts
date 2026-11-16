@@ -280,5 +280,6 @@ describe('plan-bug.md', () => {
     expect(text).toContain('Add a failing test only, run it twice, and write `repro.md` with `status`, `test`, and `command`.');
     expect(text).toContain('must not edit production files');
     expect(text).toContain('write a unit or integration test with the repo\'s framework. Use Playwright only when `package.json` already contains `@playwright/test`.');
+    expect(text).toContain('allowed:');
   });
 });
