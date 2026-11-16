@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -205,7 +205,7 @@ describe('runImplementPhase', () => {
     const u2 = unit(h.workerRuns, 'U2');
     expect(u1.role).toBe('implement');
     expect(u2.role).toBe('implement');
-    expect(u1.runDir).toBe(h.dir);
+    expect(u1.runDir).toBe(join(h.dir, 'units', 'U1'));
     expect(u1.repoRoot).toBe(h.root);
     expect(u1.allowedFiles).toEqual(['src/a.ts']);
     expect(u2.allowedFiles).toEqual(['src/b.ts']);
@@ -237,6 +237,30 @@ describe('runImplementPhase', () => {
     }]);
     expect(h.saved).toHaveLength(0);
     expect(h.diffCalls).toHaveLength(0);
+  });
+
+  it('gives two units in one wave different run directories under the attempt', async () => {
+    const h = setup();
+    const ready: { id: string; runDir: string }[] = [];
+    const workers = h.ctx.workers;
+    h.ctx.workers = {
+      async run(task) {
+        expect(existsSync(task.runDir)).toBe(true);
+        ready.push({ id: task.unitId, runDir: task.runDir });
+        return workers.run(task);
+      },
+    };
+    await runImplementPhase(h.input, h.ctx);
+    const u1 = ready.find((item) => item.id === 'U1');
+    const u2 = ready.find((item) => item.id === 'U2');
+    expect(u1?.runDir).toBe(join(h.dir, 'units', 'U1'));
+    expect(u2?.runDir).toBe(join(h.dir, 'units', 'U2'));
+    expect(u1?.runDir).not.toBe(u2?.runDir);
+    expect(u1?.runDir.startsWith(h.dir)).toBe(true);
+    expect(u2?.runDir.startsWith(h.dir)).toBe(true);
+    expect(existsSync(join(h.dir, 'plan.md'))).toBe(true);
+    expect(existsSync(join(h.dir, 'status.md'))).toBe(true);
+    expect(existsSync(join(h.dir, 'implement.md'))).toBe(true);
   });
 
   it('commits once per wave when U2 depends on U1', async () => {

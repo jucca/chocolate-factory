@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Flow } from '../../../domain/types.js';
 import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
@@ -95,9 +95,11 @@ async function dispatchUnit(
   unit: WorkUnit,
 ): Promise<WorkerReport> {
   const allowed = unit.files.map(stripNew);
+  const runDir = join(dir, 'units', unit.id);
+  mkdirSync(runDir, { recursive: true });
   return dispatchWorker(ctx.workers, {
     role: 'implement',
-    runDir: dir,
+    runDir,
     repoRoot: ctx.repoRoot,
     prompt: [playbook, `Plan: ${planPath}`, `Unit: ${unit.id}`, `Allowed files: ${allowed.join(', ')}`, `Verify: ${unit.verify}`].join('\n'),
     allowedFiles: allowed,
