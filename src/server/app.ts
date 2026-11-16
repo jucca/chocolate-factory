@@ -1,13 +1,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Contract, FactoryConfig, GateId, IssueRef, Phase } from '../domain/types.js';
+import type { Contract, EngineKind, FactoryConfig, Flow, GateId, IssueRef, Phase, RunRecord } from '../domain/types.js';
 import { loadChocolate, saveContract, saveRoadmap } from '../files/chocolateFiles.js';
 import { contractRevision } from '../files/writeBack.js';
 import type { SqliteRunStore } from '../store/runStore.js';
 import { buildRoadmapView } from '../domain/derivedStatus.js';
-import { RunService, HardGateOverrideError, OverrideReasonRequiredError } from '../runs/runService.js';
+import { RunService, HardGateOverrideError, OpenQuestionsError, OverrideReasonRequiredError, PlaybookClaimError } from '../runs/runService.js';
 import type { IssueSource } from '../issues/issueSource.js';
+import { attemptDir, listAttemptFiles, readStatusValue } from '../engine/playbook/runFolder.js';
 
 export function buildApp(deps: {
   repoRoot: string;
@@ -15,8 +16,17 @@ export function buildApp(deps: {
   runService: RunService;
   issueSource: IssueSource;
   config: FactoryConfig;
+  walker: { kick(runId: string): void };
 }): FastifyInstance {
   const app = Fastify();
+  const kickRunningPlaybook = (run: RunRecord): RunRecord => {
+    if (run.engine === 'playbook' && run.state === 'running') deps.walker.kick(run.id);
+    return run;
+  };
+  const clientError = (e: unknown): string | null =>
+    e instanceof HardGateOverrideError || e instanceof OverrideReasonRequiredError || e instanceof PlaybookClaimError || e instanceof OpenQuestionsError
+      ? e.message
+      : null;
   app.get('/api/roadmap', async () => {
     const data = loadChocolate(deps.repoRoot);
     let runtimeAvailable = true;
@@ -60,7 +70,7 @@ export function buildApp(deps: {
   });
   app.get('/api/inbox', async () => deps.issueSource.listEligible(deps.config.issue_label));
   app.post('/api/runs/claim', async (req, reply) => {
-    const { issue } = req.body as { issue: IssueRef };
+    const { issue, flow, engine } = req.body as { issue: IssueRef; flow?: Flow; engine?: EngineKind };
     const data = loadChocolate(deps.repoRoot);
     let contract = data.contracts.find(
       (c) => c.linked_issue?.number === issue.number && c.linked_issue?.repo === issue.repo,
@@ -92,7 +102,13 @@ export function buildApp(deps: {
     const revision = contractRevision(
       readFileSync(join(deps.repoRoot, '.chocolate', 'contracts', `${contract.id}.yaml`), 'utf8'),
     );
-    return deps.runService.claim({ issue, contract, contractRevision: revision });
+    try {
+      return kickRunningPlaybook(deps.runService.claim({ issue, contract, contractRevision: revision, flow, engine }));
+    } catch (e) {
+      const error = clientError(e);
+      if (error) return reply.code(400).send({ error });
+      throw e;
+    }
   });
   app.get('/api/runs', async () => deps.store.listRuns());
   app.get('/api/runs/:id', async (req, reply) => {
@@ -104,27 +120,29 @@ export function buildApp(deps: {
       events: deps.store.events(id),
       evidence: deps.store.evidence(id),
       gateDecisions: deps.store.gateDecisions(id),
+      artifacts: listAttemptFiles(deps.repoRoot, id, run.currentAttempt),
+      pullRequestUrl: readStatusValue(attemptDir(deps.repoRoot, id, run.currentAttempt), 'pr'),
     };
   });
-  app.post('/api/runs/:id/advance', async (req) => deps.runService.advance((req.params as { id: string }).id));
+  app.post('/api/runs/:id/advance', async (req) => kickRunningPlaybook(await deps.runService.advance((req.params as { id: string }).id)));
   app.post('/api/runs/:id/new-attempt', async (req, reply) => {
     const { id } = req.params as { id: string };
     const { fromPhase } = req.body as { fromPhase: Phase };
     if (!fromPhase) return reply.code(400).send({ error: 'fromPhase is required' });
     try {
-      return deps.runService.startNewAttempt(id, fromPhase);
+      return kickRunningPlaybook(deps.runService.startNewAttempt(id, fromPhase));
     } catch (e) {
       return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
     }
   });
   app.post('/api/runs/:id/gate', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = req.body as { gate: GateId; action: 'approve' | 'rework' | 'override'; reason?: string };
+    const body = req.body as { gate: GateId; action: 'approve' | 'rework' | 'override'; reason?: string; answers?: string };
     try {
-      return await deps.runService.actOnGate(id, body);
+      return kickRunningPlaybook(await deps.runService.actOnGate(id, body));
     } catch (e) {
-      if (e instanceof HardGateOverrideError || e instanceof OverrideReasonRequiredError)
-        return reply.code(400).send({ error: e.message });
+      const error = clientError(e);
+      if (error) return reply.code(400).send({ error });
       throw e;
     }
   });

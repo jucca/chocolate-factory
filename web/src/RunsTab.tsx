@@ -7,6 +7,8 @@ export function RunsTab() {
   const [runs, setRuns] = useState<RunDTO[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [flow, setFlow] = useState('feature');
+  const [engine, setEngine] = useState('simulator');
   const reload = async () => {
     try { setInbox(await api.getInbox()); setRuns(await api.listRuns()); }
     catch (e) { setError((e as Error).message); }
@@ -18,9 +20,17 @@ export function RunsTab() {
       <button onClick={reload}>Refresh inbox</button>
       {inbox?.kind === 'stale' && <p role="alert">GitHub unreachable — showing last synced issues from {inbox.lastSyncedAt ?? 'never'}: {inbox.error}</p>}
       {inbox?.kind === 'fresh' && <p>Last synced: {inbox.syncedAt}</p>}
+      <label>Flow <select value={flow} onChange={(e) => setFlow(e.target.value)}>
+        <option value="feature">feature</option>
+        <option value="bug">bug</option>
+      </select></label>
+      <label>Engine <select value={engine} onChange={(e) => setEngine(e.target.value)}>
+        <option value="simulator">simulator</option>
+        <option value="playbook">playbook</option>
+      </select></label>
       <ul>{inbox?.issues.map((i) => (
         <li key={i.number}>#{i.number} {i.url}
-          <button onClick={() => api.claim(i).then((r) => { setSelected(r.id); return reload(); })}>Claim &amp; start run</button>
+          <button onClick={() => api.claim(i, { flow, engine }).then((r) => { setSelected(r.id); return reload(); }).catch((e: Error) => setError(e.message))}>Claim &amp; start run</button>
         </li>))}
       </ul>
       {error && <p role="alert">{error}</p>}

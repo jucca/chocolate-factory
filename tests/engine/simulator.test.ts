@@ -7,18 +7,22 @@ const contract: Contract = { id: 'a', title: 'A', intent: 'x', constraints: [], 
 
 describe('SimulatorRunEngine', () => {
   it('emits phase evidence for implement', async () => {
-    const out = await new SimulatorRunEngine().runPhase({ phase: 'implement', attempt: 1, contract });
+    const out = await new SimulatorRunEngine().runPhase({ phase: 'implement', attempt: 1, contract, runId: 'run-1' });
     expect(out.evidence[0]).toMatchObject({ phase: 'implement', producerPhase: 'implement', criterionIds: ['ac-1'] });
   });
   it('verify evidence is independently produced by verify, kind verification-check', async () => {
-    const out = await new SimulatorRunEngine().runPhase({ phase: 'verify', attempt: 1, contract });
+    const out = await new SimulatorRunEngine().runPhase({ phase: 'verify', attempt: 1, contract, runId: 'run-1' });
     expect(out.evidence[0]).toMatchObject({ producerPhase: 'verify', kind: 'verification-check' });
   });
   it('throws at the injected failing phase', async () => {
-    await expect(new SimulatorRunEngine({ failAt: 'test' }).runPhase({ phase: 'test', attempt: 1, contract }))
+    await expect(new SimulatorRunEngine({ failAt: 'test' }).runPhase({ phase: 'test', attempt: 1, contract, runId: 'run-1' }))
       .rejects.toThrowError(/simulated failure at test/);
   });
   it('does not throw at other phases when failAt is set', async () => {
-    await expect(new SimulatorRunEngine({ failAt: 'test' }).runPhase({ phase: 'spec', attempt: 1, contract })).resolves.toBeDefined();
+    await expect(new SimulatorRunEngine({ failAt: 'test' }).runPhase({ phase: 'spec', attempt: 1, contract, runId: 'run-1' })).resolves.toBeDefined();
+  });
+  it('accepts a runId and still records verify evidence', async () => {
+    const out = await new SimulatorRunEngine().runPhase({ phase: 'verify', attempt: 2, contract, runId: 'run-9' });
+    expect(out.evidence[0]).toMatchObject({ attempt: 2, producerPhase: 'verify', kind: 'verification-check' });
   });
 });

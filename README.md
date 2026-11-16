@@ -18,7 +18,7 @@ git clone /path/to/chocolate-factory-v1.bundle chocolate-factory
 cd chocolate-factory
 git checkout feat/chocolate-factory-v1
 pnpm install
-pnpm test   # expect 66 passed
+pnpm test
 ```
 
 Bundle path: `chocolate-factory-v1.bundle`.
@@ -30,7 +30,7 @@ git clone https://github.com/jucca/chocolate-factory.git chocolate-factory
 cd chocolate-factory
 git checkout feat/chocolate-factory-v1
 pnpm install
-pnpm test   # expect 66 passed
+pnpm test
 ```
 
 This repo is already stamped (`.chocolate/` is present). Serve it as the factory root with `.` in the commands below.
@@ -103,3 +103,11 @@ Without a configured repo, the inbox is empty or stale; you can still inspect th
 ### Layout
 
 See `.chocolate/AGENTS.md` for the map. Contracts are one YAML per feature; every acceptance criterion maps to a gate.
+
+## Playbook engine
+
+A claim can choose feature or bug, and simulator or playbook. Simulator stays the default and still uses Advance. A playbook run walks until a gate.
+
+Commit-ready requires an open, non-draft pull request and green CI. The server does not merge.
+
+Worker commands live under `workers.default.command` and `workers.implement.command` in `.chocolate/config.yaml`. Empty commands reject a playbook claim.

@@ -2,9 +2,9 @@ import { execFile } from 'node:child_process';
 import type { IssueRef } from '../domain/types.js';
 import type { IssueListResult, IssueSource } from './issueSource.js';
 
-export type GhRunner = (args: string[]) => Promise<string>;
-export const defaultGhRunner: GhRunner = (args) => new Promise((resolve, reject) => {
-  execFile('gh', args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => err ? reject(err) : resolve(stdout));
+export type GhRunner = (args: string[], cwd?: string) => Promise<string>;
+export const defaultGhRunner: GhRunner = (args, cwd) => new Promise((resolve, reject) => {
+  execFile('gh', args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => err ? reject(err) : resolve(stdout));
 });
 
 interface GhIssue { number: number; url: string; }

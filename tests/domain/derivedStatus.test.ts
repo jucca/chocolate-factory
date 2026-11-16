@@ -4,7 +4,7 @@ import { deriveContractStatus, buildRoadmapView } from '../../src/domain/derived
 import type { Contract, RunRecord } from '../../src/domain/types.js';
 
 const c = (id: string, deps: string[] = []): Contract => ({ id, title: id, intent: 'x', acceptance_criteria: [], constraints: [], out_of_scope: [], linked_issue: null, milestone: 'm1', dependencies: deps });
-const run = (state: RunRecord['state']): RunRecord => ({ id: 'r1', contractId: 'a', contractRevision: 'rev', issue: null, phase: 'spec', state, currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/r1.md', createdAt: '2026-11-08T00:00:00.000Z' });
+const run = (state: RunRecord['state']): RunRecord => ({ id: 'r1', contractId: 'a', contractRevision: 'rev', issue: null, phase: 'spec', state, currentAttempt: 1, execPlanRef: '.chocolate/exec-plans/r1.md', createdAt: '2026-11-08T00:00:00.000Z', flow: 'feature', engine: 'simulator' });
 const base = { valid: true, contract: c('a'), dependencyStatuses: [], latestRun: null, pendingGate: false, latestAttemptFailed: false };
 
 describe('deriveContractStatus (spec 5.4 order)', () => {

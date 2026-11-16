@@ -28,4 +28,24 @@ describe('schemas', () => {
     try { parseContract({ id: 1 }); expect.unreachable(); }
     catch (e) { expect(e).toBeInstanceOf(SchemaError); }
   });
+  it('parses a missing workers block as two empty command lists', () => {
+    const cfg = parseConfig({
+      issue_label: 'chocolate:ready',
+      issue_source: { repo: '' },
+      gates: { spec: 'soft', plan: 'soft', verify: 'hard', commit: 'hard' },
+      runtime: '.chocolate/runtime',
+    });
+    expect(cfg.workers.default.command).toEqual([]);
+    expect(cfg.workers.implement.command).toEqual([]);
+  });
+  it('parses worker argv lists', () => {
+    const cfg = parseConfig({
+      issue_label: 'chocolate:ready',
+      issue_source: { repo: 'o/r' },
+      gates: { spec: 'soft', plan: 'soft', verify: 'hard', commit: 'hard' },
+      runtime: '.chocolate/runtime',
+      workers: { default: { command: ['node', 'plan.js'] }, implement: { command: ['node', 'work.js'] } },
+    });
+    expect(cfg.workers.implement.command).toEqual(['node', 'work.js']);
+  });
 });

@@ -1,11 +1,12 @@
 // tests/runs/runService.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunService, HardGateOverrideError, OverrideReasonRequiredError } from '../../src/runs/runService.js';
 import { SqliteRunStore } from '../../src/store/runStore.js';
 import { SimulatorRunEngine } from '../../src/engine/simulator.js';
+import { ensureAttempt } from '../../src/engine/playbook/runFolder.js';
 import { DEFAULT_CONFIG, type Contract } from '../../src/domain/types.js';
 import type { ChocolateData } from '../../src/files/chocolateFiles.js';
 
@@ -109,5 +110,103 @@ describe('RunService', () => {
     }
     await svc.advance(run.id);
     expect(store.getRun(run.id)?.state).toBe('commit-ready');
+  });
+
+  it('rejects a playbook claim when a worker command is empty and stores nothing', () => {
+    expect(() => svc.claim({ issue: null, contract, contractRevision: 'rev1', engine: 'playbook' })).toThrow(/worker command/);
+    expect(store.listRuns()).toEqual([]);
+  });
+
+  it('records flow and engine on the claim', () => {
+    const run = svc.claim({ issue: null, contract, contractRevision: 'rev1', flow: 'bug', engine: 'simulator' });
+    expect(store.getRun(run.id)).toMatchObject({ flow: 'bug', engine: 'simulator' });
+  });
+
+  it('reloads the contract after the phase before evaluating the gate', async () => {
+    const empty = structuredClone(contract);
+    empty.acceptance_criteria = [];
+    const reloaded = structuredClone(empty);
+    reloaded.acceptance_criteria = [{ id: 'ac-new', statement: 'from brief', gates: ['spec', 'verify', 'commit'], evidence: 'brief' }];
+    let loads = 0;
+    const files = {
+      load: () => {
+        loads += 1;
+        const current = loads === 1 ? empty : reloaded;
+        return { contracts: [current], invalidContracts: [], roadmap: null, roadmapError: null, config: DEFAULT_CONFIG, crossRefErrors: [] };
+      },
+      readContractFile: () => 'rev',
+      saveContract: () => 'rev-new',
+    };
+    const engine = {
+      async runPhase() {
+        return { events: [{ type: 'phase_completed', message: 'spec wrote criteria' }], evidence: [{ attempt: 1, phase: 'spec' as const, producerPhase: 'spec' as const, criterionIds: ['ac-new'], kind: 'brief', summary: 'brief' }] };
+      },
+    };
+    const local = new RunService({ store, engine, files, config: DEFAULT_CONFIG, repoRoot: root });
+    const run = local.claim({ issue: null, contract: empty, contractRevision: 'rev1' });
+    const stopped = await local.advance(run.id);
+    expect(empty.acceptance_criteria).toEqual([]);
+    expect(stopped.state).toBe('awaiting-decision');
+    expect(store.events(run.id).some((e) => e.message.includes('gate spec: pass'))).toBe(true);
+  });
+
+  it('rejects spec approval while open questions have no answers', async () => {
+    const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
+    const dir = ensureAttempt(root, run.id, 1);
+    writeFileSync(join(dir, 'brief.md'), '# T\n## Open questions\n- Which limit?\n');
+    writeFileSync(join(dir, 'status.md'), '# T\n');
+    await svc.advance(run.id);
+    await expect(svc.actOnGate(run.id, { gate: 'spec', action: 'approve' })).rejects.toThrow(/open questions/);
+    expect(store.getRun(run.id)?.state).toBe('awaiting-decision');
+    await svc.actOnGate(run.id, { gate: 'spec', action: 'approve', answers: 'Limit is 3' });
+    expect(store.getRun(run.id)?.phase).toBe('plan');
+  });
+
+  it('returns the same promise when advance is already in flight', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let calls = 0;
+    const engine = {
+      async runPhase() {
+        calls += 1;
+        await gate;
+        return { events: [{ type: 'phase_completed', message: 'spec done' }], evidence: [] };
+      },
+    };
+    const files = {
+      load: () => ({
+        contracts: [contract],
+        invalidContracts: [],
+        roadmap: { milestones: [{ id: 'm1', title: 'M1', intent: 'x', contracts: ['feat-a'] }] },
+        roadmapError: null,
+        config: DEFAULT_CONFIG,
+        crossRefErrors: [],
+      }),
+      readContractFile: () => 'rev-content',
+      saveContract: () => 'rev2',
+    };
+    const local = new RunService({ store, engine, files, config: DEFAULT_CONFIG, repoRoot: root });
+    const run = local.claim({ issue: null, contract, contractRevision: 'rev1' });
+    const first = local.advance(run.id);
+    const second = local.advance(run.id);
+    expect(second).toBe(first);
+    expect(calls).toBe(1);
+    release();
+    const settled = await first;
+    expect(await second).toBe(settled);
+    const third = local.advance(run.id);
+    expect(third).not.toBe(first);
+    await third;
+    expect(calls).toBe(1);
+  });
+
+  it('spec override with a reason proceeds while open questions are unanswered', async () => {
+    const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
+    const dir = ensureAttempt(root, run.id, 1);
+    writeFileSync(join(dir, 'brief.md'), '# T\n## Open questions\n- Which limit?\n');
+    writeFileSync(join(dir, 'status.md'), '# T\n');
+    await svc.advance(run.id);
+    await svc.actOnGate(run.id, { gate: 'spec', action: 'override', reason: 'ship the brief' });
+    expect(store.getRun(run.id)?.phase).toBe('plan');
   });
 });

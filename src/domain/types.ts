@@ -15,28 +15,34 @@ export interface Contract {
 }
 export interface Milestone { id: string; title: string; intent: string; contracts: string[]; }
 export interface Roadmap { milestones: Milestone[]; }
+export interface WorkerCommand { command: string[]; }
 export interface FactoryConfig {
   issue_label: string;
   issue_source: { repo: string };
   gates: Record<GateId, 'soft' | 'hard'>;
   runtime: string;
+  workers: { default: WorkerCommand; implement: WorkerCommand };
 }
 export const DEFAULT_CONFIG: FactoryConfig = {
   issue_label: 'chocolate:ready',
   issue_source: { repo: '' },
   gates: { ...GATE_KIND },
   runtime: '.chocolate/runtime',
+  workers: { default: { command: [] }, implement: { command: [] } },
 };
 
 export type ContractStatus =
   | 'invalid' | 'blocked' | 'not-started' | 'in-progress'
   | 'in-review' | 'commit-ready' | 'failed' | 'done';
 export type RunState = 'running' | 'awaiting-decision' | 'failed' | 'commit-ready';
+export type Flow = 'feature' | 'bug';
+export type EngineKind = 'simulator' | 'playbook';
 
 export interface RunRecord {
   id: string; contractId: string; contractRevision: string;
   issue: IssueRef | null; phase: Phase; state: RunState;
   currentAttempt: number; execPlanRef: string; createdAt: string;
+  flow: Flow; engine: EngineKind;
 }
 export interface RunEvent {
   id: string; runId: string; attempt: number; type: string;
