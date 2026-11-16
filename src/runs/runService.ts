@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { Contract, FactoryConfig, GateId, IssueRef, Phase, RunRecord } from '../domain/types.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Contract, EngineKind, FactoryConfig, Flow, GateId, IssueRef, Phase, RunRecord } from '../domain/types.js';
 import { GATE_KIND, PHASES } from '../domain/types.js';
 import type { SqliteRunStore } from '../store/runStore.js';
 import { evaluateGate } from '../gates/gateEvaluator.js';
 import type { RunEngine } from '../engine/runEngine.js';
+import { attemptDir, openQuestionBullets, recordAnswers } from '../engine/playbook/runFolder.js';
 import type { ChocolateData } from '../files/chocolateFiles.js';
 import { appendExecPlanLog, writeExecPlan } from './execPlan.js';
 
@@ -17,6 +20,12 @@ export class OverrideReasonRequiredError extends Error {
     super('override requires a recorded reason');
   }
 }
+export class PlaybookClaimError extends Error {
+  constructor() { super('playbook claim requires a non-empty worker command for workers.default.command and workers.implement.command'); }
+}
+export class OpenQuestionsError extends Error {
+  constructor() { super('spec approval requires answers to open questions'); }
+}
 export interface FilesPort {
   load(): ChocolateData;
   readContractFile(contractId: string): string;
@@ -29,9 +38,16 @@ const now = () => new Date().toISOString();
 export class RunService {
   constructor(private deps: { store: SqliteRunStore; engine: RunEngine; files: FilesPort; config: FactoryConfig; repoRoot: string }) {}
 
-  claim(input: { issue: IssueRef | null; contract: Contract; contractRevision: string }): RunRecord {
+  claim(input: { issue: IssueRef | null; contract: Contract; contractRevision: string; flow?: Flow; engine?: EngineKind }): RunRecord {
     const active = this.deps.store.listRunsByContract(input.contract.id).find((r) => r.state !== 'commit-ready' && r.state !== 'failed');
     if (active) return active;
+    const flow = input.flow ?? 'feature';
+    const engine = input.engine ?? 'simulator';
+    if (engine === 'playbook') {
+      const defaultCommand = this.deps.config.workers?.default?.command;
+      const implementCommand = this.deps.config.workers?.implement?.command;
+      if (!defaultCommand?.length || !implementCommand?.length) throw new PlaybookClaimError();
+    }
     const id = `run-${randomUUID().slice(0, 8)}`;
     const run = this.deps.store.createRun({
       id,
@@ -42,8 +58,8 @@ export class RunService {
       state: 'running',
       currentAttempt: 1,
       execPlanRef: `.chocolate/exec-plans/${id}.md`,
-      flow: 'feature',
-      engine: 'simulator',
+      flow,
+      engine,
     });
     this.deps.store.appendEvent({
       runId: id,
@@ -64,7 +80,7 @@ export class RunService {
 
     while (run.state === 'running') {
       const data = this.deps.files.load();
-      const contract = data.contracts.find((c) => c.id === run.contractId);
+      let contract = data.contracts.find((c) => c.id === run.contractId);
       if (!contract) {
         this.failPhase(run, `contract ${run.contractId} invalid or missing`);
         return this.mustRun(runId);
@@ -91,6 +107,9 @@ export class RunService {
         this.failPhase(run, e instanceof Error ? e.message : String(e));
         return this.mustRun(runId);
       }
+
+      run = this.mustRun(runId);
+      contract = this.deps.files.load().contracts.find((c) => c.id === run.contractId) ?? contract;
 
       const gate = GATE_AFTER_PHASE[run.phase];
       if (gate) {
@@ -139,7 +158,7 @@ export class RunService {
 
   async actOnGate(
     runId: string,
-    input: { gate: GateId; action: 'approve' | 'rework' | 'override'; reason?: string },
+    input: { gate: GateId; action: 'approve' | 'rework' | 'override'; reason?: string; answers?: string },
   ): Promise<RunRecord> {
     const run = this.mustRun(runId);
     if (input.action === 'override') {
@@ -166,6 +185,16 @@ export class RunService {
     });
     if (input.action === 'approve' && evaluation.outcome === 'fail')
       throw new Error(`gate ${input.gate} cannot be approved: ${evaluation.reasons.join('; ')}`);
+    if (input.action === 'approve' && input.gate === 'spec') {
+      const dir = attemptDir(this.deps.repoRoot, runId, run.currentAttempt);
+      const briefPath = join(dir, 'brief.md');
+      if (existsSync(briefPath)) {
+        const questions = openQuestionBullets(readFileSync(briefPath, 'utf8'));
+        const answers = input.answers?.trim() ?? '';
+        if (questions.length > 0 && answers === '') throw new OpenQuestionsError();
+        if (input.answers && answers !== '') recordAnswers(dir, input.answers);
+      }
+    }
     this.deps.store.appendGateDecision({
       runId,
       attempt: run.currentAttempt,
