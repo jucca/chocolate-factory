@@ -73,7 +73,7 @@ export async function runVerifyPhase(input: PhaseInput, ctx: PhaseContext & { fl
 
     const open = [...baseline.values()].filter((item) => item.status === 'open');
     if (pass >= MAX_PASS || open.length === 0) break;
-    await fixOpen(ctx, dir, playbook, open);
+    await fixOpen(ctx, dir, playbook, open, join(dir, `review-${pass}.md`));
   }
 
   if (deferredItems.length > 0) {
@@ -138,7 +138,7 @@ async function confirmMusts(ctx: PhaseContext, dir: string, playbook: string, mu
     prompt: [
       playbook,
       'Disprove each must-fix candidate with a line `DISPROVE <id> <reason>`.',
-      ...musts.map((item) => `${item.id} ${item.file}:${item.line} ${item.title}`),
+      ...musts.map(candidateLine),
     ].join('\n'),
     allowedFiles: [],
     unitId: 'verifier',
@@ -147,7 +147,7 @@ async function confirmMusts(ctx: PhaseContext, dir: string, playbook: string, mu
   return musts.filter((item) => !dropped.has(item.id));
 }
 
-async function fixOpen(ctx: PhaseContext, dir: string, playbook: string, open: Rated[]): Promise<void> {
+async function fixOpen(ctx: PhaseContext, dir: string, playbook: string, open: Rated[], reviewPath: string): Promise<void> {
   const groups = groupByFile(open);
   const parallel = groups.length > 1;
   await Promise.all(groups.map((group) => {
@@ -162,6 +162,8 @@ async function fixOpen(ctx: PhaseContext, dir: string, playbook: string, open: R
       repoRoot: ctx.repoRoot,
       prompt: [
         playbook,
+        `Review: ${reviewPath}`,
+        ...group.map(candidateLine),
         `Ids: ${ids.join(', ')}`,
         `Allowed files: ${files.join(', ')}`,
         'Do not edit other files.',
@@ -170,6 +172,11 @@ async function fixOpen(ctx: PhaseContext, dir: string, playbook: string, open: R
       unitId,
     });
   }));
+}
+
+function candidateLine(item: Rated): string {
+  const rest = item.rest === '' ? '' : ` | ${item.rest}`;
+  return `${item.id} ${item.file}:${item.line} ${item.title}${rest}`;
 }
 
 function groupByFile(open: Rated[]): Rated[][] {

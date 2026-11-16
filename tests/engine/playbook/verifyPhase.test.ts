@@ -237,6 +237,40 @@ describe('runVerifyPhase', () => {
     expect(output.evidence[0].summary).toContain('baseline open 0');
   });
 
+  it('sends each fix worker its own finding text and the review path', async () => {
+    const h = setup({
+      reviewerNotes: [
+        [
+          'MUST src/a.ts:10 First | alpha crash | guard a',
+          'MUST src/b.ts:4 Second | beta leak | close b',
+        ].join('\n'),
+        'BASE M1 resolved\nBASE M2 resolved',
+      ],
+      verifierNotes: '',
+    });
+    await runVerifyPhase(h.input, h.ctx);
+    const fix = fixes(h.workerRuns);
+    expect(fix).toHaveLength(2);
+    const reviewPath = join(h.dir, 'review-1.md');
+    const alpha = fix.find((task) => task.allowedFiles.includes('src/a.ts'));
+    const beta = fix.find((task) => task.allowedFiles.includes('src/b.ts'));
+    expect(alpha).toBeDefined();
+    expect(beta).toBeDefined();
+    expect(alpha!.runDir).not.toBe(beta!.runDir);
+    expect(alpha!.prompt).toContain('alpha crash');
+    expect(alpha!.prompt).toContain(reviewPath);
+    expect(alpha!.prompt).toContain('Do not edit other files.');
+    expect(alpha!.prompt).not.toContain('beta leak');
+    expect(beta!.prompt).toContain('beta leak');
+    expect(beta!.prompt).toContain(reviewPath);
+    expect(beta!.prompt).toContain('Do not edit other files.');
+    expect(beta!.prompt).not.toContain('alpha crash');
+    const verifier = verifiers(h.workerRuns);
+    expect(verifier).toHaveLength(1);
+    expect(verifier[0].prompt).toContain('M1 src/a.ts:10 First | alpha crash | guard a');
+    expect(verifier[0].prompt).toContain('M2 src/b.ts:4 Second | beta leak | close b');
+  });
+
   it('returns evidence when the baseline stays open after two fix rounds', async () => {
     const h = setup({
       reviewerNotes: [MUST, 'BASE M1 open', 'BASE M1 open'],
