@@ -1,9 +1,9 @@
-import type { Contract, Phase } from '../domain/types.js';
-import type { PhaseOutput, RunEngine } from './runEngine.js';
+import type { Phase } from '../domain/types.js';
+import type { PhaseInput, PhaseOutput, RunEngine } from './runEngine.js';
 
 export class SimulatorRunEngine implements RunEngine {
   constructor(private opts: { failAt?: Phase } = {}) {}
-  async runPhase(input: { phase: Phase; attempt: number; contract: Contract }): Promise<PhaseOutput> {
+  async runPhase(input: PhaseInput): Promise<PhaseOutput> {
     if (this.opts.failAt === input.phase) throw new Error(`simulated failure at ${input.phase}`);
     const criterionIds = input.contract.acceptance_criteria.map((c) => c.id);
     const isVerify = input.phase === 'verify';

@@ -70,7 +70,7 @@ export class RunService {
         return this.mustRun(runId);
       }
       try {
-        const out = await this.deps.engine.runPhase({ phase: run.phase, attempt: run.currentAttempt, contract });
+        const out = await this.deps.engine.runPhase({ phase: run.phase, attempt: run.currentAttempt, contract, runId });
         for (const e of out.events)
           this.deps.store.appendEvent({
             runId,
