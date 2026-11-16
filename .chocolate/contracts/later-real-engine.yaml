@@ -1,17 +1,35 @@
 id: later-real-engine
 title: Real coding agent engine
 intent: >-
-  Deliberately excluded from V1 (spec §11.2). Replace the simulator with a live
-  agent harness that edits the repo and produces real evidence.
+  The playbook engine walks feature and bug runs and the cockpit owns the gates.
 acceptance_criteria:
-  - id: ac-deferred
-    statement: Not required for V1; placeholder for a future hard verify gate.
+  - id: ac-playbook-walk
+    statement: A feature playbook claim reaches commit-ready on an open pull request with green CI.
     gates:
       - verify
-    evidence: deferred
-constraints: []
+      - commit
+    evidence: tests/engine/playbook/feature.test.ts
+  - id: ac-playbook-bug
+    statement: A bug claim reproduces before the plan gate, and an edit to the repro test fails the run.
+    gates:
+      - verify
+    evidence: tests/engine/playbook/bug.test.ts
+  - id: ac-playbook-commit
+    statement: A draft or red CI fails the commit gate, and a simulator commit with verify-phase verification-check still passes.
+    gates:
+      - commit
+    evidence: tests/gates/gateEvaluator.test.ts
+constraints:
+  - Hard gates stay hard.
+  - The engine does not merge.
 out_of_scope:
-  - V1 release scope.
+  - Jira
+  - Linear
+  - Egg
+  - webhooks
+  - multi-repo
+  - hosted cockpit
+  - auto-merge
 linked_issue: null
-milestone: later-phases
+milestone: real-engine
 dependencies: []

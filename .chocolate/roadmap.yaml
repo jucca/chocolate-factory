@@ -10,13 +10,18 @@ milestones:
       - v1-runs-simulator
       - v1-gates
       - v1-fixture-dogfood
+  - id: real-engine
+    title: Real engine
+    intent: >-
+      Live feature and bug runs that stop at the cockpit gates.
+    contracts:
+      - later-real-engine
   - id: later-phases
     title: Later phases (explicitly out of V1)
     intent: >-
       Named capabilities deliberately excluded from V1 per spec §11.2; tracked
       so stakeholders see what comes next without expecting them in this release.
     contracts:
-      - later-real-engine
       - later-auto-merge
       - later-webhooks
       - later-multi-repo
