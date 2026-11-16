@@ -206,13 +206,12 @@ describe('runTestPhase', () => {
     expect(readFileSync(join(h.dir, 'implement.md'), 'utf8')).toContain('unit failed');
   });
 
-  it('commits integration edits inside the base diff and reverts the rest', async () => {
+  it('commits integration edits inside the pre-worker diff and reverts the rest', async () => {
     let dirty = false;
     const commits: string[] = [];
     const reverts: string[][] = [];
     const deletes: string[][] = [];
     const h = setup({
-      changed: ['src/a.ts'],
       results: {
         'pnpm test': [
           { ok: false, output: 'unit failed' },
@@ -222,16 +221,17 @@ describe('runTestPhase', () => {
       onTask: () => { dirty = true; },
       git: {
         statusPorcelain: async () => (dirty ? ' M src/a.ts\n M src/other.ts\n?? stray.ts' : ''),
+        diffNames: async () => (dirty ? ['src/a.ts', 'src/other.ts'] : ['src/a.ts']),
         commitAll: async (_repo, message) => { commits.push(message); },
         revert: async (_repo, paths) => { reverts.push(paths); },
         deleteUntracked: async (_repo, paths) => { deletes.push(paths); },
       },
     });
     await runTestPhase(h.input, h.ctx);
+    expect(h.workerRuns[0].allowedFiles).toEqual(['src/a.ts']);
     expect(reverts).toEqual([['src/other.ts']]);
     expect(deletes).toEqual([['stray.ts']]);
     expect(commits).toEqual(['fix: integration checks']);
-    expect(h.diffCalls.filter((call) => call.path === undefined).length).toBeGreaterThan(1);
   });
 
   it('does not commit when the integration worker changes nothing', async () => {

@@ -86,15 +86,14 @@ async function dispatchIntegration(
     allowedFiles: allowed,
     unitId,
   });
-  await commitIntegration(ctx, dir);
+  await commitIntegration(ctx, allowed);
 }
 
-async function commitIntegration(ctx: PhaseContext, dir: string): Promise<void> {
+async function commitIntegration(ctx: PhaseContext, allowed: readonly string[]): Promise<void> {
   const repoRoot = ctx.repoRoot;
   const porcelain = await ctx.git.statusPorcelain(repoRoot);
   if (porcelain === '') return;
-  const allowed = new Set(await ctx.git.diffNames(repoRoot, baseSha(readStatusValue(dir, 'base'))));
-  await revertOutside(ctx.git, repoRoot, porcelain, allowed);
+  await revertOutside(ctx.git, repoRoot, porcelain, new Set(allowed));
   if ((await ctx.git.statusPorcelain(repoRoot)) === '') return;
   await ctx.git.commitAll(repoRoot, 'fix: integration checks');
 }
