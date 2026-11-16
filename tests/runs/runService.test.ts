@@ -123,23 +123,29 @@ describe('RunService', () => {
   });
 
   it('reloads the contract after the phase before evaluating the gate', async () => {
-    const mutable = structuredClone(contract);
-    mutable.acceptance_criteria = [];
-    const data = { contracts: [mutable], invalidContracts: [], roadmap: null, roadmapError: null, config: DEFAULT_CONFIG, crossRefErrors: [] };
+    const empty = structuredClone(contract);
+    empty.acceptance_criteria = [];
+    const reloaded = structuredClone(empty);
+    reloaded.acceptance_criteria = [{ id: 'ac-new', statement: 'from brief', gates: ['spec', 'verify', 'commit'], evidence: 'brief' }];
+    let loads = 0;
     const files = {
-      load: () => data,
+      load: () => {
+        loads += 1;
+        const current = loads === 1 ? empty : reloaded;
+        return { contracts: [current], invalidContracts: [], roadmap: null, roadmapError: null, config: DEFAULT_CONFIG, crossRefErrors: [] };
+      },
       readContractFile: () => 'rev',
       saveContract: () => 'rev-new',
     };
     const engine = {
       async runPhase() {
-        mutable.acceptance_criteria = [{ id: 'ac-new', statement: 'from brief', gates: ['spec', 'verify', 'commit'] as const, evidence: 'brief' }];
         return { events: [{ type: 'phase_completed', message: 'spec wrote criteria' }], evidence: [{ attempt: 1, phase: 'spec' as const, producerPhase: 'spec' as const, criterionIds: ['ac-new'], kind: 'brief', summary: 'brief' }] };
       },
     };
     const local = new RunService({ store, engine, files, config: DEFAULT_CONFIG, repoRoot: root });
-    const run = local.claim({ issue: null, contract: mutable, contractRevision: 'rev1' });
+    const run = local.claim({ issue: null, contract: empty, contractRevision: 'rev1' });
     const stopped = await local.advance(run.id);
+    expect(empty.acceptance_criteria).toEqual([]);
     expect(stopped.state).toBe('awaiting-decision');
     expect(store.events(run.id).some((e) => e.message.includes('gate spec: pass'))).toBe(true);
   });
