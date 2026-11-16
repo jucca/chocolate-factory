@@ -20,6 +20,12 @@ export function evaluateGate(input: {
   if (input.gate === 'commit' && input.dependencyStatuses.some((s) => !SATISFIED.includes(s)))
     reasons.push('unmet dependency: a dependency contract is not commit-ready');
   if (mapped.length === 0) reasons.push(`no acceptance criteria map to gate ${input.gate}`);
+  if (input.gate === 'commit') {
+    const pr = input.evidence.find((e) => e.kind === 'pull-request');
+    if (pr && pr.summary !== 'open') reasons.push('pull request is a draft');
+    if (pr && !input.evidence.some((e) => e.kind === 'ci-green' && e.producerPhase === 'commit'))
+      reasons.push('CI is not green');
+  }
   const evidenceIds = [...new Set(mapped.flatMap((c) => { const e = covered(c.id); return e ? [e.id] : []; }))];
   return { gate: input.gate, attempt: input.attempt, outcome: reasons.length === 0 ? 'pass' : 'fail', passedCriterionIds, missingCriterionIds, reasons, evidenceIds };
 }

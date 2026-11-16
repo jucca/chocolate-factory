@@ -66,4 +66,46 @@ describe('evaluateGate', () => {
     });
     expect(r).toMatchObject({ outcome: 'pass', missingCriterionIds: [], passedCriterionIds: ['ac-2'] });
   });
+  it('fails commit when pull-request evidence is a draft', () => {
+    const r = evaluateGate({
+      ...base,
+      gate: 'commit',
+      evidence: [
+        ev({ criterionIds: ['ac-2'] }),
+        ev({ id: 'pr', phase: 'commit', producerPhase: 'commit', kind: 'pull-request', summary: 'draft', criterionIds: [] }),
+        ev({ id: 'ci', phase: 'commit', producerPhase: 'commit', kind: 'ci-green', summary: 'abc', criterionIds: [] }),
+      ],
+      dependencyStatuses: ['commit-ready'],
+    });
+    expect(r.outcome).toBe('fail');
+    expect(r.reasons.join(' ')).toMatch(/draft/);
+  });
+
+  it('fails commit when an open pull request has no ci-green evidence', () => {
+    const r = evaluateGate({
+      ...base,
+      gate: 'commit',
+      evidence: [
+        ev({ criterionIds: ['ac-2'] }),
+        ev({ id: 'pr', phase: 'commit', producerPhase: 'commit', kind: 'pull-request', summary: 'open', criterionIds: [] }),
+      ],
+      dependencyStatuses: ['commit-ready'],
+    });
+    expect(r.outcome).toBe('fail');
+    expect(r.reasons.join(' ')).toMatch(/CI is not green/);
+  });
+
+  it('passes commit for an open pull request with ci-green and verify evidence', () => {
+    const r = evaluateGate({
+      ...base,
+      gate: 'commit',
+      evidence: [
+        ev({ criterionIds: ['ac-2'] }),
+        ev({ id: 'pr', phase: 'commit', producerPhase: 'commit', kind: 'pull-request', summary: 'open', criterionIds: [] }),
+        ev({ id: 'ci', phase: 'commit', producerPhase: 'commit', kind: 'ci-green', summary: 'abc', criterionIds: [] }),
+      ],
+      dependencyStatuses: ['commit-ready'],
+    });
+    expect(r.outcome).toBe('pass');
+  });
 });
