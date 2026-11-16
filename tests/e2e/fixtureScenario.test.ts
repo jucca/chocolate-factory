@@ -30,7 +30,7 @@ beforeEach(() => {
   store = new SqliteRunStore(join(root, '.chocolate/runtime/cf.db'));
   const files = { load: () => loadChocolate(root), readContractFile: (id: string) => readFileSync(join(root, `.chocolate/contracts/${id}.yaml`), 'utf8'), saveContract: (c: Contract) => saveContract(root, c) };
   const runService = new RunService({ store, engine: new SimulatorRunEngine(), files, config: DEFAULT_CONFIG, repoRoot: root });
-  app = buildApp({ repoRoot: root, store, runService, issueSource: new FakeIssueSource([issue]), config: DEFAULT_CONFIG });
+  app = buildApp({ repoRoot: root, store, runService, issueSource: new FakeIssueSource([issue]), config: DEFAULT_CONFIG, walker: { kick() {} } });
 });
 afterEach(async () => { await app.close(); store.close(); });
 

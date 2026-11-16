@@ -8,19 +8,19 @@ export interface ContractDTO {
   constraints: string[]; out_of_scope: string[];
   linked_issue: IssueRef | null; milestone: string; dependencies: string[];
 }
-export interface RunDTO { id: string; contractId: string; phase: string; state: string; currentAttempt: number; execPlanRef: string; }
-export interface RunDetailDTO { run: RunDTO; events: { id: string; attempt: number; type: string; phase: string | null; message: string; createdAt: string }[]; evidence: { id: string; attempt: number; producerPhase: string; kind: string; summary: string; criterionIds: string[] }[]; gateDecisions: { id: string; attempt: number; gate: string; action: string; reason: string | null; evaluationOutcome: string }[]; }
+export interface RunDTO { id: string; contractId: string; phase: string; state: string; currentAttempt: number; execPlanRef: string; flow: string; engine: string; }
+export interface RunDetailDTO { run: RunDTO; events: { id: string; attempt: number; type: string; phase: string | null; message: string; createdAt: string }[]; evidence: { id: string; attempt: number; producerPhase: string; kind: string; summary: string; criterionIds: string[] }[]; gateDecisions: { id: string; attempt: number; gate: string; action: string; reason: string | null; evaluationOutcome: string }[]; artifacts: string[]; pullRequestUrl: string | null; }
 
 async function json<T>(res: Response): Promise<T> { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`); return res.json() as Promise<T>; }
 export const api = {
   getRoadmap: () => fetch('/api/roadmap').then((r) => json<RoadmapDTO>(r)),
   getContract: (id: string) => fetch(`/api/contracts/${id}`).then((r) => json<ContractDTO>(r)),
   getInbox: () => fetch('/api/inbox').then((r) => json<InboxDTO>(r)),
-  claim: (issue: IssueRef) => fetch('/api/runs/claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ issue }) }).then((r) => json<RunDTO>(r)),
+  claim: (issue: IssueRef, options?: { flow?: string; engine?: string }) => fetch('/api/runs/claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ issue, ...options }) }).then((r) => json<RunDTO>(r)),
   listRuns: () => fetch('/api/runs').then((r) => json<RunDTO[]>(r)),
   getRun: (id: string) => fetch(`/api/runs/${id}`).then((r) => json<RunDetailDTO>(r)),
   advance: (id: string) => fetch(`/api/runs/${id}/advance`, { method: 'POST' }).then((r) => json<RunDTO>(r)),
-  actOnGate: (id: string, body: { gate: string; action: string; reason?: string }) => fetch(`/api/runs/${id}/gate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<RunDTO>(r)),
+  actOnGate: (id: string, body: { gate: string; action: string; reason?: string; answers?: string }) => fetch(`/api/runs/${id}/gate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<RunDTO>(r)),
   saveContract: (contract: unknown) => fetch(`/api/contracts/${(contract as { id: string }).id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(contract) }).then((r) => json<{ revision: string }>(r)),
   startNewAttempt: (id: string, fromPhase: string) =>
     fetch(`/api/runs/${id}/new-attempt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fromPhase }) }).then((r) => json<RunDTO>(r)),

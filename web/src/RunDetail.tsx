@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type RunDetailDTO } from './api';
 
 const GATES = ['spec', 'plan', 'verify', 'commit'] as const;
@@ -6,12 +6,27 @@ const HARD = new Set(['verify', 'commit']);
 export function RunDetail({ runId }: { runId: string }) {
   const [detail, setDetail] = useState<RunDetailDTO | null>(null);
   const [reason, setReason] = useState('');
+  const [answers, setAnswers] = useState('');
   const [error, setError] = useState('');
-  const reload = () => api.getRun(runId).then(setDetail).catch((e: Error) => setError(e.message));
-  useEffect(() => { void reload(); }, [runId]);
+  const reload = useCallback(() => api.getRun(runId).then(setDetail).catch((e: Error) => setError(e.message)), [runId]);
+  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (detail?.run.state !== 'running') return;
+    const timer = setInterval(reload, 2000);
+    return () => clearInterval(timer);
+  }, [detail?.run.state, reload]);
   if (!detail) return <p>Loading run…</p>;
   const act = async (gate: string, action: string) => {
-    try { await api.actOnGate(runId, { gate, action, reason: reason || undefined }); setReason(''); await reload(); }
+    try {
+      await api.actOnGate(runId, {
+        gate,
+        action,
+        reason: reason || undefined,
+        ...(action === 'approve' && gate === 'spec' ? { answers } : {}),
+      });
+      setReason('');
+      await reload();
+    }
     catch (e) { setError((e as Error).message); }
   };
   return (
@@ -19,7 +34,10 @@ export function RunDetail({ runId }: { runId: string }) {
       <h3>{detail.run.id} — {detail.run.contractId}</h3>
       <p>Phase: {detail.run.phase} · State: {detail.run.state} · Attempt: {detail.run.currentAttempt}</p>
       <p>Exec plan: <code>{detail.run.execPlanRef}</code></p>
-      <button onClick={() => api.advance(runId).then(reload)}>Advance phase</button>
+      {detail.pullRequestUrl !== null && <p><a href={detail.pullRequestUrl}>{detail.pullRequestUrl}</a></p>}
+      {(detail.run.engine !== 'playbook' || detail.run.state === 'running') && (
+        <button onClick={() => api.advance(runId).then(reload)}>Advance phase</button>
+      )}
       {detail.run.state === 'failed' && (
         <button onClick={() => api.startNewAttempt(runId, 'spec').then(reload)}>New Attempt</button>
       )}
@@ -28,6 +46,9 @@ export function RunDetail({ runId }: { runId: string }) {
       {GATES.map((gate) => (
         <div key={gate}>
           <strong>{gate}</strong>{HARD.has(gate) ? ' (hard — no override)' : ' (soft)'}
+          {gate === 'spec' && detail.run.phase === 'spec' && detail.run.state === 'awaiting-decision' && (
+            <input aria-label="answers to open questions" value={answers} onChange={(e) => setAnswers(e.target.value)} />
+          )}
           <button onClick={() => act(gate, 'approve')}>Approve</button>
           {!HARD.has(gate) && <>
             <button onClick={() => act(gate, 'rework')}>Rework</button>
@@ -36,6 +57,8 @@ export function RunDetail({ runId }: { runId: string }) {
           </>}
         </div>
       ))}
+      <h4>Artifacts</h4>
+      <ul>{detail.artifacts.map((name) => <li key={name}>{name}</li>)}</ul>
       <h4>Evidence</h4>
       <ul>{detail.evidence.map((e) => <li key={e.id}>[{e.producerPhase}/{e.kind}] {e.summary} (attempt {e.attempt})</li>)}</ul>
       <h4>Gate decisions</h4>
