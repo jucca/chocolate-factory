@@ -378,13 +378,6 @@ describe('runPlanPhase feature', () => {
     expect(h.workerRuns).toHaveLength(0);
     expect(h.saved).toHaveLength(0);
   });
-
-  it('throws for bug flow before any worker', async () => {
-    const h = setup({ flow: 'bug' });
-    await expect(runPlanPhase(h.input, h.ctx)).rejects.toThrow('bug plan is a later task');
-    expect(h.workerRuns).toHaveLength(0);
-    expect(h.saved).toHaveLength(0);
-  });
 });
 
 describe('plan-feature.md', () => {

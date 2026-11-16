@@ -1,9 +1,10 @@
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { Contract, Flow, GateId } from '../../../domain/types.js';
 import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
 import { dispatchWorker } from '../dispatchWorker.js';
 import { buildWaves, parseAcceptanceIds, parsePlan, topLevelDirs, type WorkUnit } from '../planDoc.js';
+import type { CommandResult } from '../ports.js';
 import type { PhaseContext } from './specPhase.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
 
@@ -20,7 +21,7 @@ export async function runPlanPhase(input: PhaseInput, ctx: PhaseContext & { flow
   const expected = readStatusValue(dir, 'branch');
   const actual = await ctx.git.headBranch(repoRoot);
   if (actual !== expected) throw new Error(`HEAD is ${actual}, expected ${expected}`);
-  if (ctx.flow === 'bug') throw new Error('bug plan is a later task');
+  if (ctx.flow === 'bug') return planBug(input, ctx, dir);
 
   await explore(ctx, dir, 'explore-where', WHERE);
   await explore(ctx, dir, 'explore-tests', HOW_TESTED);
@@ -38,6 +39,32 @@ export async function runPlanPhase(input: PhaseInput, ctx: PhaseContext & { flow
     if (problem) throw new Error(`plan check failed: ${problem}`);
   }
 
+  return finishPlan(input, ctx, dir);
+}
+
+async function planBug(input: PhaseInput, ctx: PhaseContext, dir: string): Promise<PhaseOutput> {
+  const reproPath = join(dir, 'repro.md');
+  await dispatchWorker(ctx.workers, {
+    role: 'default',
+    runDir: dir,
+    repoRoot: ctx.repoRoot,
+    prompt: [ctx.readPlaybook('plan-bug.md'), `Brief: ${join(dir, 'brief.md')}`, `Write ${reproPath}`].join('\n'),
+    allowedFiles: [relative(ctx.repoRoot, reproPath)],
+    unitId: 'repro',
+  });
+  const repro = readFileSync(reproPath, 'utf8');
+  if (reproValue(repro, 'status') !== 'reproduced') throw new Error('not-reproduced');
+  const command = reproValue(repro, 'command');
+  const first = await ctx.commands.run(ctx.repoRoot, command);
+  const second = await ctx.commands.run(ctx.repoRoot, command);
+  if (!sameFailure(first, second)) throw new Error('failure is not deterministic');
+  const allowed = reproValue(repro, 'allowed');
+  if (allowed === reproTestPath(reproValue(repro, 'test'))) throw new Error('repro test is not an allowed file');
+  writeFileSync(join(dir, 'plan.md'), oneUnitPlan(allowed, command));
+  return finishPlan(input, ctx, dir);
+}
+
+function finishPlan(input: PhaseInput, ctx: PhaseContext, dir: string): PhaseOutput {
   const plan = readFileSync(join(dir, 'plan.md'), 'utf8');
   const next = withPlanCriteria(input.contract, plan);
   const revision = ctx.files.saveContract(next);
@@ -137,6 +164,44 @@ function unorderedShare(units: WorkUnit[]): string | null {
 
 function stripNew(file: string): string {
   return file.startsWith('new:') ? file.slice(4) : file;
+}
+
+function oneUnitPlan(allowed: string, command: string): string {
+  return [
+    '| ID | Goal | Files (create/modify) | Depends on | Verify with |',
+    '| --- | --- | --- | --- | --- |',
+    `| U1 | fix the reproduced failure | new:${allowed} | - | ${command} |`,
+    '',
+  ].join('\n');
+}
+
+function reproValue(markdown: string, key: string): string {
+  const prefix = `${key}:`;
+  for (const line of markdown.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(prefix)) continue;
+    return trimmed.slice(prefix.length).trim();
+  }
+  return '';
+}
+
+function reproTestPath(testField: string): string {
+  const marker = testField.indexOf('::');
+  return (marker === -1 ? testField : testField.slice(0, marker)).trim();
+}
+
+function lastNonEmptyLine(output: string): string {
+  let last = '';
+  for (const line of output.split('\n')) {
+    if (line.trim() !== '') last = line.trim();
+  }
+  return last;
+}
+
+function sameFailure(first: CommandResult, second: CommandResult): boolean {
+  return first.ok === false
+    && second.ok === false
+    && lastNonEmptyLine(first.output) === lastNonEmptyLine(second.output);
 }
 
 function section(markdown: string, heading: string): string {
