@@ -1,0 +1,17 @@
+id: later-hosted-cockpit
+title: Hosted cockpit deployment
+intent: >-
+  Deliberately excluded from V1 (spec §11.2). Run the cockpit as a shared hosted
+  service with auth instead of localhost-only serve.
+acceptance_criteria:
+  - id: ac-deferred
+    statement: Not required for V1; local serve on 127.0.0.1:4200 is sufficient.
+    gates:
+      - verify
+    evidence: deferred
+constraints: []
+out_of_scope:
+  - V1 release scope.
+linked_issue: null
+milestone: later-phases
+dependencies: []

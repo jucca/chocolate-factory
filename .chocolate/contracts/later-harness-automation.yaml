@@ -1,0 +1,17 @@
+id: later-harness-automation
+title: Harness automation and spec §9.2 signals
+intent: >-
+  Deliberately excluded from V1 (spec §11.2). Wire deferred automation signals
+  (retries, notifications, scheduled advancement) without operator clicks.
+acceptance_criteria:
+  - id: ac-deferred
+    statement: Not required for V1; manual advance and gate actions only.
+    gates:
+      - spec
+    evidence: deferred
+constraints: []
+out_of_scope:
+  - V1 release scope.
+linked_issue: null
+milestone: later-phases
+dependencies: []

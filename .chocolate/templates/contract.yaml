@@ -1,0 +1,14 @@
+id: replace-me
+title: Replace me
+intent: Plain-language intent for stakeholders.
+acceptance_criteria:
+  - id: ac-1
+    statement: Checkable criterion in plain language.
+    gates:
+      - verify
+    evidence: verification-check summary
+constraints: []
+out_of_scope: []
+linked_issue: null
+milestone: v1
+dependencies: []

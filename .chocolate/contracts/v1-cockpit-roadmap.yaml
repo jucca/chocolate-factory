@@ -1,0 +1,24 @@
+id: v1-cockpit-roadmap
+title: Cockpit API and roadmap view
+intent: >-
+  Stakeholders read milestones and contracts in plain language via the cockpit
+  roadmap tab backed by committed YAML and derived statuses.
+acceptance_criteria:
+  - id: ac-roadmap-api
+    statement: GET /api/roadmap returns milestones with contract intents and statuses.
+    gates:
+      - verify
+    evidence: tests/server/app.test.ts
+  - id: ac-derived-status
+    statement: Contract status derivation follows spec §5.4 ordering for V1.
+    gates:
+      - verify
+    evidence: tests/domain/derivedStatus.test.ts
+constraints:
+  - No hosted multi-tenant UI in V1.
+out_of_scope:
+  - Production static UI bundle served without dev tooling.
+linked_issue: null
+milestone: v1
+dependencies:
+  - v1-stamp

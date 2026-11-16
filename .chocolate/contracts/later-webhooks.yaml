@@ -1,0 +1,17 @@
+id: later-webhooks
+title: Issue and CI webhooks
+intent: >-
+  Deliberately excluded from V1 (spec §11.2). Ingest GitHub webhooks to refresh
+  inbox, invalidate runs, and trigger harness automation.
+acceptance_criteria:
+  - id: ac-deferred
+    statement: Not required for V1; polling and manual claim suffice locally.
+    gates:
+      - spec
+    evidence: deferred
+constraints: []
+out_of_scope:
+  - V1 release scope.
+linked_issue: null
+milestone: later-phases
+dependencies: []
