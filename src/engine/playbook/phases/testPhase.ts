@@ -4,6 +4,7 @@ import type { Flow } from '../../../domain/types.js';
 import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
 import { dispatchWorker } from '../dispatchWorker.js';
 import type { CommandResult } from '../ports.js';
+import { revertOutside } from '../porcelain.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
 import type { PhaseContext } from './specPhase.js';
 
@@ -85,6 +86,17 @@ async function dispatchIntegration(
     allowedFiles: allowed,
     unitId,
   });
+  await commitIntegration(ctx, dir);
+}
+
+async function commitIntegration(ctx: PhaseContext, dir: string): Promise<void> {
+  const repoRoot = ctx.repoRoot;
+  const porcelain = await ctx.git.statusPorcelain(repoRoot);
+  if (porcelain === '') return;
+  const allowed = new Set(await ctx.git.diffNames(repoRoot, baseSha(readStatusValue(dir, 'base'))));
+  await revertOutside(ctx.git, repoRoot, porcelain, allowed);
+  if ((await ctx.git.statusPorcelain(repoRoot)) === '') return;
+  await ctx.git.commitAll(repoRoot, 'fix: integration checks');
 }
 
 async function checkRepro(ctx: PhaseContext, dir: string): Promise<void> {

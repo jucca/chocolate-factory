@@ -5,6 +5,7 @@ import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
 import { dispatchWorker } from '../dispatchWorker.js';
 import { buildWaves, parsePlan, type WorkUnit } from '../planDoc.js';
 import type { CommandResult, WorkerReport } from '../ports.js';
+import { porcelainEntries, revertOutside } from '../porcelain.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
 import type { PhaseContext } from './specPhase.js';
 
@@ -114,11 +115,11 @@ async function guardScope(
   base: string,
 ): Promise<void> {
   const repoRoot = ctx.repoRoot;
-  const entries = porcelainEntries(await ctx.git.statusPorcelain(repoRoot));
-  const tracked = entries.filter((entry) => !entry.untracked && !allowed.has(entry.path)).map((entry) => entry.path);
-  const untracked = entries.filter((entry) => entry.untracked && !allowed.has(entry.path)).map((entry) => entry.path);
-  if (tracked.length > 0) await ctx.git.revert(repoRoot, tracked);
-  if (untracked.length > 0) await ctx.git.deleteUntracked(repoRoot, untracked);
+  const porcelain = await ctx.git.statusPorcelain(repoRoot);
+  const entries = porcelainEntries(porcelain);
+  const hold = new Set<string>();
+  if (reproPath) hold.add(reproPath);
+  await revertOutside(ctx.git, repoRoot, porcelain, allowed, hold);
   if (!reproPath) return;
   const names = await ctx.git.diffNames(repoRoot, base, reproPath);
   if (!entries.some((entry) => entry.path === reproPath) && !names.includes(reproPath)) return;
@@ -146,19 +147,6 @@ function writeImplement(dir: string, rows: UnitRow[]): void {
 
 function stripNew(file: string): string {
   return file.startsWith('new:') ? file.slice(4) : file;
-}
-
-function porcelainEntries(porcelain: string): { path: string; untracked: boolean }[] {
-  const entries: { path: string; untracked: boolean }[] = [];
-  for (const line of porcelain.split('\n')) {
-    if (line.length < 4) continue;
-    let path = line.slice(3);
-    const arrow = path.lastIndexOf(' -> ');
-    if (arrow !== -1) path = path.slice(arrow + 4);
-    if (path.startsWith('"') && path.endsWith('"')) path = path.slice(1, -1);
-    entries.push({ path, untracked: line.slice(0, 2) === '??' });
-  }
-  return entries;
 }
 
 function readReproPath(dir: string): string {

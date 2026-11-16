@@ -161,10 +161,22 @@ describe('runSpecPhase', () => {
   });
 
   it('throws when feat/gh-7 already exists', async () => {
-    const h = setup({ git: { branchExists: async () => true } });
+    const h = setup({ git: { branchExists: async () => true, headBranch: async () => 'main' } });
     await expect(runSpecPhase(h.input, h.ctx)).rejects.toThrow(/already exists/);
     expect(h.branchChecks).toEqual(['feat/gh-7']);
+    expect(h.created).toEqual([]);
     expect(h.workerRuns).toHaveLength(0);
+  });
+
+  it('reuses feat/gh-7 when HEAD is already on that branch', async () => {
+    const h = setup({ git: { branchExists: async () => true, headBranch: async () => 'feat/gh-7' } });
+    await runSpecPhase(h.input, h.ctx);
+    const dir = attemptDir(h.root, 'run-1', 1);
+    expect(h.created).toEqual([]);
+    expect(h.workerRuns).toHaveLength(1);
+    expect(existsSync(join(dir, 'brief.md'))).toBe(true);
+    expect(readStatusValue(dir, 'branch')).toBe('feat/gh-7');
+    expect(readFileSync(join(dir, 'status.md'), 'utf8')).toContain('- phase: spec');
   });
 
   it('throws when the default branch cannot be resolved', async () => {

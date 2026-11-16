@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Flow } from '../../../domain/types.js';
 import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
 import { dispatchWorker } from '../dispatchWorker.js';
+import { revertOutside } from '../porcelain.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
 import type { PhaseContext } from './specPhase.js';
 
@@ -74,6 +75,7 @@ export async function runVerifyPhase(input: PhaseInput, ctx: PhaseContext & { fl
     const open = [...baseline.values()].filter((item) => item.status === 'open');
     if (pass >= MAX_PASS || open.length === 0) break;
     await fixOpen(ctx, dir, playbook, open, join(dir, `review-${pass}.md`));
+    await commitFixRound(ctx, pass, new Set(open.map((item) => item.file)));
   }
 
   if (deferredItems.length > 0) {
@@ -126,6 +128,7 @@ async function reviewPass(
       unitId,
     });
   }));
+  if (reports.some((report) => report.status === 'blocked')) throw new Error('review blocked');
   return reports.map((report) => report.notes).join('\n');
 }
 
@@ -143,8 +146,18 @@ async function confirmMusts(ctx: PhaseContext, dir: string, playbook: string, mu
     allowedFiles: [],
     unitId: 'verifier',
   });
+  if (report.status === 'blocked') throw new Error('verifier blocked');
   const dropped = disprovedIds(report.notes);
   return musts.filter((item) => !dropped.has(item.id));
+}
+
+async function commitFixRound(ctx: PhaseContext, pass: number, allowed: ReadonlySet<string>): Promise<void> {
+  const repoRoot = ctx.repoRoot;
+  const porcelain = await ctx.git.statusPorcelain(repoRoot);
+  if (porcelain === '') return;
+  await revertOutside(ctx.git, repoRoot, porcelain, allowed);
+  if ((await ctx.git.statusPorcelain(repoRoot)) === '') return;
+  await ctx.git.commitAll(repoRoot, `fix: pass-${pass} must-fix`);
 }
 
 async function fixOpen(ctx: PhaseContext, dir: string, playbook: string, open: Rated[], reviewPath: string): Promise<void> {

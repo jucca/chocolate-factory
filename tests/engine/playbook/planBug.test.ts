@@ -265,6 +265,34 @@ describe('runPlanPhase bug', () => {
     expect(existsSync(join(h.dir, 'plan.md'))).toBe(false);
   });
 
+  it('commits only the repro test after a deterministic failure', async () => {
+    let reads = 0;
+    const commits: { root: string; message: string }[] = [];
+    const order: string[] = [];
+    const h = setup({
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1 ? '' : ' M src/handler.ts\n?? src/other.ts\n?? tests/bug.test.ts';
+        },
+        commitAll: async (repoRoot, message) => {
+          order.push(`commit:${message}`);
+          commits.push({ root: repoRoot, message });
+        },
+        revert: async (_repo, paths) => { order.push(`revert:${paths.join(',')}`); },
+        deleteUntracked: async (_repo, paths) => { order.push(`delete:${paths.join(',')}`); },
+      },
+    });
+    await runPlanPhase(h.input, h.ctx);
+    expect(order).toEqual([
+      'revert:src/handler.ts',
+      'delete:src/other.ts',
+      'commit:test: reproduce the bug',
+    ]);
+    expect(commits).toEqual([{ root: h.root, message: 'test: reproduce the bug' }]);
+    expect(order.join(' ')).not.toContain('tests/bug.test.ts');
+  });
+
   it('throws when the working tree is dirty and does not call a worker', async () => {
     const h = setup({ git: { statusPorcelain: async () => ' M src/handler.ts' } });
     await expect(runPlanPhase(h.input, h.ctx)).rejects.toThrow(/working tree is dirty/);

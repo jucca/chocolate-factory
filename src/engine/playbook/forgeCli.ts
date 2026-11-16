@@ -1,3 +1,4 @@
+import type { GhRunner } from '../../issues/githubIssueSource.js';
 import type { CheckView, ForgePort, IssueText, PullRequestView } from './ports.js';
 
 const prFields = 'url,number,isDraft,headRefOid,headRefName';
@@ -23,7 +24,7 @@ function parsePr(raw: string): PullRequestView {
 }
 
 export class ForgeCli implements ForgePort {
-  constructor(private deps: { runGh: (args: string[]) => Promise<string> }) {}
+  constructor(private deps: { runGh: GhRunner }) {}
 
   async defaultBranch(repo: string): Promise<string | null> {
     try {
@@ -41,48 +42,45 @@ export class ForgeCli implements ForgePort {
   }
 
   async viewPr(repoRoot: string): Promise<PullRequestView | null> {
-    void repoRoot;
     try {
-      return parsePr(await this.deps.runGh(prViewArgs));
+      return parsePr(await this.deps.runGh(prViewArgs, repoRoot));
     } catch {
       return null;
     }
   }
 
   async upsertPr(input: { repoRoot: string; base: string; title: string; bodyPath: string; draft: boolean }): Promise<PullRequestView> {
-    void input.repoRoot;
+    const cwd = input.repoRoot;
     let current: PullRequestView | null;
     try {
-      current = parsePr(await this.deps.runGh(prViewArgs));
+      current = parsePr(await this.deps.runGh(prViewArgs, cwd));
     } catch {
       current = null;
     }
     if (current) {
       const args = ['pr', 'edit', String(current.number), '--body-file', input.bodyPath];
       if (input.draft) args.push('--draft');
-      await this.deps.runGh(args);
-      return { ...current, isDraft: input.draft };
+      await this.deps.runGh(args, cwd);
+      if (!input.draft && current.isDraft) await this.deps.runGh(['pr', 'ready', String(current.number)], cwd);
+      return parsePr(await this.deps.runGh(prViewArgs, cwd));
     }
     const args = ['pr', 'create', '--base', input.base, '--title', input.title, '--body-file', input.bodyPath];
     if (input.draft) args.push('--draft');
-    await this.deps.runGh(args);
-    return parsePr(await this.deps.runGh(prViewArgs));
+    await this.deps.runGh(args, cwd);
+    return parsePr(await this.deps.runGh(prViewArgs, cwd));
   }
 
   async checks(repoRoot: string, prNumber: number): Promise<CheckView[]> {
-    void repoRoot;
-    const out = await this.deps.runGh(['pr', 'checks', String(prNumber), '--json', 'name,state,bucket,link']);
+    const out = await this.deps.runGh(['pr', 'checks', String(prNumber), '--json', 'name,state,bucket,link'], repoRoot);
     const parsed = JSON.parse(out) as CheckView[];
     return parsed.map((check) => ({ name: check.name, state: check.state, bucket: check.bucket, link: check.link }));
   }
 
   async rerunFailed(repoRoot: string, runId: string): Promise<void> {
-    void repoRoot;
-    await this.deps.runGh(['run', 'rerun', runId, '--failed']);
+    await this.deps.runGh(['run', 'rerun', runId, '--failed'], repoRoot);
   }
 
   async failedLog(repoRoot: string, runId: string): Promise<string> {
-    void repoRoot;
-    return this.deps.runGh(['run', 'view', runId, '--log-failed']);
+    return this.deps.runGh(['run', 'view', runId, '--log-failed'], repoRoot);
   }
 }

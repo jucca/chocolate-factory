@@ -162,6 +162,44 @@ describe('RunService', () => {
     expect(store.getRun(run.id)?.phase).toBe('plan');
   });
 
+  it('returns the same promise when advance is already in flight', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let calls = 0;
+    const engine = {
+      async runPhase() {
+        calls += 1;
+        await gate;
+        return { events: [{ type: 'phase_completed', message: 'spec done' }], evidence: [] };
+      },
+    };
+    const files = {
+      load: () => ({
+        contracts: [contract],
+        invalidContracts: [],
+        roadmap: { milestones: [{ id: 'm1', title: 'M1', intent: 'x', contracts: ['feat-a'] }] },
+        roadmapError: null,
+        config: DEFAULT_CONFIG,
+        crossRefErrors: [],
+      }),
+      readContractFile: () => 'rev-content',
+      saveContract: () => 'rev2',
+    };
+    const local = new RunService({ store, engine, files, config: DEFAULT_CONFIG, repoRoot: root });
+    const run = local.claim({ issue: null, contract, contractRevision: 'rev1' });
+    const first = local.advance(run.id);
+    const second = local.advance(run.id);
+    expect(second).toBe(first);
+    expect(calls).toBe(1);
+    release();
+    const settled = await first;
+    expect(await second).toBe(settled);
+    const third = local.advance(run.id);
+    expect(third).not.toBe(first);
+    await third;
+    expect(calls).toBe(1);
+  });
+
   it('spec override with a reason proceeds while open questions are unanswered', async () => {
     const run = svc.claim({ issue: null, contract, contractRevision: 'rev1' });
     const dir = ensureAttempt(root, run.id, 1);

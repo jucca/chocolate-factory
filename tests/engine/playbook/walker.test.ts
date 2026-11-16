@@ -20,4 +20,28 @@ describe('RunWalker', () => {
     await Promise.resolve();
     expect(calls).toBe(2);
   });
+
+  it('swallows a rejected advance and lets a later kick run', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    let calls = 0;
+    const walker = new RunWalker({
+      async advance() {
+        calls += 1;
+        if (calls === 1) throw new Error('advance failed');
+      },
+    });
+    try {
+      walker.kick('run-1');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      walker.kick('run-1');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(calls).toBe(2);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
 });

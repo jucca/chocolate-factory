@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -47,6 +47,15 @@ writeFileSync(process.env.CHOCOLATE_RUN_DIR + '/worker-report.md', 'STATUS: part
     expect(report.notes.startsWith('spawn failed')).toBe(true);
     expect(report.filesChanged).toEqual([]);
     expect(report.route).toBe('implement');
+  });
+  it('does not report a non-ENOENT error code as spawn failed', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cf-'));
+    const dir = ensureAttempt(root, 'run-1', 1);
+    const notBinary = join(root, 'not-a-binary');
+    mkdirSync(notBinary);
+    const port = new ProcessWorker({ default: [notBinary], implement: [notBinary] });
+    const report = await port.run({ role: 'implement', runDir: dir, repoRoot: root, prompt: 'x', allowedFiles: [], unitId: 'U1' });
+    expect(report.notes.startsWith('spawn failed')).toBe(false);
   });
   it('reads STATUS when the process started and then exited non-zero', async () => {
     const root = mkdtempSync(join(tmpdir(), 'cf-'));

@@ -3,8 +3,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkerPort, WorkerReport, WorkerRole, WorkerStatus, WorkerTask } from './ports.js';
 
+const MAX_BUFFER = 32 * 1024 * 1024;
+
 function isSpawnFailure(err: Error): boolean {
-  return typeof (err as NodeJS.ErrnoException).code === 'string';
+  return (err as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
 function runCommand(command: string[], task: WorkerTask): Promise<void> {
@@ -16,6 +18,7 @@ function runCommand(command: string[], task: WorkerTask): Promise<void> {
     }
     execFile(bin, args, {
       cwd: task.repoRoot,
+      maxBuffer: MAX_BUFFER,
       env: {
         ...process.env,
         CHOCOLATE_REPO: task.repoRoot,
@@ -24,8 +27,8 @@ function runCommand(command: string[], task: WorkerTask): Promise<void> {
       },
       shell: false,
     }, (err) => {
-      if (!err || !isSpawnFailure(err)) resolve();
-      else reject(err);
+      if (err && isSpawnFailure(err)) reject(err);
+      else resolve();
     });
   });
 }

@@ -32,7 +32,7 @@ export async function runCommitPhase(input: PhaseInput, ctx: PhaseContext & { fl
   });
   appendStatus(dir, `- pr: ${pr.url}`);
 
-  const green = unresolved ? false : await watch(ctx, dir, branch, pr.number);
+  const green = pr.isDraft ? false : await watch(ctx, dir, branch, pr.number);
   appendStatus(dir, '- phase: commit');
   const evidence: PhaseOutput['evidence'] = [{
     attempt: input.attempt,
@@ -40,7 +40,7 @@ export async function runCommitPhase(input: PhaseInput, ctx: PhaseContext & { fl
     producerPhase: 'commit',
     criterionIds: [],
     kind: 'pull-request',
-    summary: unresolved ? 'draft' : 'open',
+    summary: pr.isDraft ? 'draft' : 'open',
   }];
   if (green) {
     evidence.push({
@@ -127,6 +127,9 @@ async function fixFailure(ctx: PhaseContext, dir: string, branch: string, attemp
     allowedFiles: allowed,
     unitId,
   });
+  if ((await ctx.git.statusPorcelain(ctx.repoRoot)) !== '') {
+    await ctx.git.commitAll(ctx.repoRoot, 'fix: CI');
+  }
   await pushBranch(ctx, branch);
 }
 

@@ -411,6 +411,48 @@ describe('runImplementPhase', () => {
     expect(h.deletes.some((paths) => paths.includes('src/a.ts'))).toBe(false);
   });
 
+  it('reverts both sides of a rename that fall outside the allow list', async () => {
+    let reads = 0;
+    const h = setup({
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1 ? '' : 'R  src/old.ts -> src/a.ts\nR src/b.ts -> src/new.ts\n?? stray.ts';
+        },
+      },
+    });
+    await runImplementPhase(h.input, h.ctx);
+    const reverted = h.reverts.flat();
+    const deleted = h.deletes.flat();
+    expect(reverted).toContain('src/old.ts');
+    expect(reverted).toContain('src/new.ts');
+    expect(reverted).not.toContain('src/a.ts');
+    expect(reverted).not.toContain('src/b.ts');
+    expect(deleted).toContain('stray.ts');
+    expect(deleted).not.toContain('src/old.ts');
+    expect(deleted).not.toContain('src/new.ts');
+  });
+
+  it('reverts a tracked repro test and does not delete it', async () => {
+    let reads = 0;
+    const h = setup({
+      flow: 'bug',
+      repro: REPRO,
+      diffResult: [],
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1 ? '' : 'R  tests/bug.test.ts -> tests/moved.test.ts';
+        },
+      },
+    });
+    await expect(runImplementPhase(h.input, h.ctx)).rejects.toThrow('repro test was modified');
+    expect(h.reverts.flat()).toContain('tests/bug.test.ts');
+    expect(h.deletes.flat()).not.toContain('tests/bug.test.ts');
+    expect(h.deletes.flat()).not.toContain('tests/moved.test.ts');
+    expect(h.commits).toHaveLength(0);
+  });
+
   it('reverts a modified repro test and throws', async () => {
     let reads = 0;
     const h = setup({

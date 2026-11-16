@@ -4,6 +4,6 @@ export class RunWalker {
   kick(runId: string): void {
     if (this.active.has(runId)) return;
     this.active.add(runId);
-    void this.runs.advance(runId).finally(() => { this.active.delete(runId); });
+    void this.runs.advance(runId).finally(() => { this.active.delete(runId); }).catch(() => {});
   }
 }

@@ -46,6 +46,7 @@ function setup(options: {
   checks?: CheckView[][];
   repeatChecks?: boolean;
   logFor?: (runId: string) => string;
+  viewDraft?: boolean;
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cf-commit-phase-'));
   const dir = ensureAttempt(root, 'run-1', 1);
@@ -58,21 +59,35 @@ function setup(options: {
   const checkCalls: { root: string; number: number }[] = [];
   const reruns: string[] = [];
   const logIds: string[] = [];
+  const commits: { root: string; message: string }[] = [];
+  const trace: string[] = [];
+  let pendingFix = false;
+  let tree = options.porcelain ?? '';
   const queue = (options.checks ?? [[check('pass')]]).map((row) => [...row]);
   const git: GitPort = {
     isRepo: async () => { throw new Error('git was called'); },
-    statusPorcelain: async () => options.porcelain ?? '',
+    statusPorcelain: async () => tree,
     originHead: async () => { throw new Error('git was called'); },
     fetch: async () => { throw new Error('git was called'); },
     branchExists: async () => { throw new Error('git was called'); },
     createBranch: async () => { throw new Error('git was called'); },
     headBranch: async () => options.headBranch ?? 'feat/gh-7',
     headSha: async () => options.headSha ?? 'abc',
-    commitAll: async () => { throw new Error('git was called'); },
+    commitAll: async (repoRoot, message) => {
+      commits.push({ root: repoRoot, message });
+      trace.push('commit');
+      pendingFix = false;
+      tree = '';
+    },
     diffNames: async () => ['src/a.ts'],
     changedLines: async () => { throw new Error('git was called'); },
-    push: async (repoRoot, branch) => { pushes.push({ root: repoRoot, branch }); },
+    push: async (repoRoot, branch) => {
+      if (pendingFix) throw new Error('fix push without commitAll');
+      trace.push('push');
+      pushes.push({ root: repoRoot, branch });
+    },
     remoteHead: async (repoRoot, branch) => {
+      trace.push('remote');
       remoteCalls.push({ root: repoRoot, branch });
       return options.remoteHead === undefined ? 'abc' : options.remoteHead;
     },
@@ -84,6 +99,10 @@ function setup(options: {
       workerRuns.push(task);
       if (task.role === 'default') {
         writeFileSync(join(dir, 'pr.md'), '# Ship the inbox\n\n## Summary\nShipped\n');
+      }
+      if (task.role === 'implement') {
+        tree = ' M src/a.ts';
+        pendingFix = true;
       }
       const report: WorkerReport = { status: 'done', filesChanged: [], notes: '', route: task.role };
       return report;
@@ -103,7 +122,7 @@ function setup(options: {
     viewPr: async () => { throw new Error('gh was called'); },
     upsertPr: async (input) => {
       prs.push(input);
-      return { url: PR_URL, number: 4, isDraft: input.draft, headSha: 'abc', headBranch: 'feat/gh-7' };
+      return { url: PR_URL, number: 4, isDraft: options.viewDraft ?? input.draft, headSha: 'abc', headBranch: 'feat/gh-7' };
     },
     checks: async (repoRoot, number) => {
       checkCalls.push({ root: repoRoot, number });
@@ -135,7 +154,7 @@ function setup(options: {
     },
     flow: options.flow ?? 'feature' as Flow,
   };
-  return { root, dir, input, ctx, workerRuns, pushes, remoteCalls, prs, checkCalls, reruns, logIds };
+  return { root, dir, input, ctx, workerRuns, pushes, remoteCalls, prs, checkCalls, reruns, logIds, commits, trace };
 }
 
 function writers(tasks: WorkerTask[]): WorkerTask[] {
@@ -255,6 +274,8 @@ describe('runCommitPhase', () => {
       { root: h.root, branch: 'feat/gh-7' },
       { root: h.root, branch: 'feat/gh-7' },
     ]);
+    expect(h.commits).toEqual([{ root: h.root, message: 'fix: CI' }]);
+    expect(h.trace).toEqual(['remote', 'push', 'commit', 'remote', 'push']);
     expect(h.checkCalls).toHaveLength(2);
     expect(output.evidence.map((item) => `${item.kind}:${item.summary}`)).toEqual([
       'pull-request:open',
@@ -277,6 +298,11 @@ describe('runCommitPhase', () => {
       expect(task.prompt).toContain('Error: boom');
     }
     expect(h.reruns).toEqual([]);
+    expect(h.commits).toEqual([
+      { root: h.root, message: 'fix: CI' },
+      { root: h.root, message: 'fix: CI' },
+      { root: h.root, message: 'fix: CI' },
+    ]);
     const babysit = readFileSync(join(h.dir, 'babysit.md'), 'utf8');
     expect(babysit).toContain('attempt 3');
     expect(existsSync(join(fix[0].runDir, 'babysit.md'))).toBe(false);
@@ -352,6 +378,21 @@ describe('runCommitPhase', () => {
     expect(h.reruns).toEqual(['21']);
     expect(fixes(h.workerRuns)).toHaveLength(0);
     expect(output.evidence.some((item) => item.kind === 'ci-green' && item.summary === 'abc')).toBe(true);
+  });
+
+  it('records a draft when the re-read says the pull request is still a draft', async () => {
+    const h = setup({ viewDraft: true });
+    const output = await runCommitPhase(h.input, h.ctx);
+    expect(h.prs[0].draft).toBe(false);
+    expect(output.evidence).toEqual([{
+      attempt: 1,
+      phase: 'commit',
+      producerPhase: 'commit',
+      criterionIds: [],
+      kind: 'pull-request',
+      summary: 'draft',
+    }]);
+    expect(h.checkCalls).toEqual([]);
   });
 
   it('throws when the remote head moved and does not push', async () => {

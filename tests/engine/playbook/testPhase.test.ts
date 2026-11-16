@@ -71,6 +71,7 @@ function setup(options: {
   diffForPath?: string[];
   repro?: string;
   plan?: string;
+  onTask?: (task: WorkerTask) => void;
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cf-test-phase-'));
   const workerRuns: WorkerTask[] = [];
@@ -96,6 +97,7 @@ function setup(options: {
     async run(task) {
       workerRuns.push(task);
       order.push(`worker:${task.unitId}`);
+      options.onTask?.(task);
       const report: WorkerReport = { status: 'done', filesChanged: [], notes: '', route: task.role };
       return report;
     },
@@ -202,6 +204,53 @@ describe('runTestPhase', () => {
       summary: 'pnpm test ok\npnpm exec tsc --noEmit ok',
     });
     expect(readFileSync(join(h.dir, 'implement.md'), 'utf8')).toContain('unit failed');
+  });
+
+  it('commits integration edits inside the base diff and reverts the rest', async () => {
+    let dirty = false;
+    const commits: string[] = [];
+    const reverts: string[][] = [];
+    const deletes: string[][] = [];
+    const h = setup({
+      changed: ['src/a.ts'],
+      results: {
+        'pnpm test': [
+          { ok: false, output: 'unit failed' },
+          { ok: true, output: 'unit passed' },
+        ],
+      },
+      onTask: () => { dirty = true; },
+      git: {
+        statusPorcelain: async () => (dirty ? ' M src/a.ts\n M src/other.ts\n?? stray.ts' : ''),
+        commitAll: async (_repo, message) => { commits.push(message); },
+        revert: async (_repo, paths) => { reverts.push(paths); },
+        deleteUntracked: async (_repo, paths) => { deletes.push(paths); },
+      },
+    });
+    await runTestPhase(h.input, h.ctx);
+    expect(reverts).toEqual([['src/other.ts']]);
+    expect(deletes).toEqual([['stray.ts']]);
+    expect(commits).toEqual(['fix: integration checks']);
+    expect(h.diffCalls.filter((call) => call.path === undefined).length).toBeGreaterThan(1);
+  });
+
+  it('does not commit when the integration worker changes nothing', async () => {
+    const commits: string[] = [];
+    const h = setup({
+      changed: ['src/a.ts'],
+      results: {
+        'pnpm test': [
+          { ok: false, output: 'unit failed' },
+          { ok: true, output: 'unit passed' },
+        ],
+      },
+      git: {
+        commitAll: async (_repo, message) => { commits.push(message); },
+      },
+    });
+    await runTestPhase(h.input, h.ctx);
+    expect(h.workerRuns).toHaveLength(1);
+    expect(commits).toEqual([]);
   });
 
   it('throws after two integration workers and does not call a third', async () => {

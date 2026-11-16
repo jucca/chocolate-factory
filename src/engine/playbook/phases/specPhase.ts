@@ -43,14 +43,18 @@ export async function runSpecPhase(input: PhaseInput, ctx: PhaseContext & { flow
   const issue = input.contract.linked_issue;
   const slug = issue ? `gh-${issue.number}` : input.contract.id;
   const branch = `${ctx.flow === 'bug' ? 'fix' : 'feat'}/${slug}`;
-  if (await ctx.git.branchExists(repoRoot, branch)) throw new Error(`branch ${branch} already exists`);
+  const exists = await ctx.git.branchExists(repoRoot, branch);
+  if (exists) {
+    const head = await ctx.git.headBranch(repoRoot);
+    if (head !== branch) throw new Error(`branch ${branch} already exists`);
+  }
 
   let base: string | null = issue ? await ctx.forge.defaultBranch(issue.repo) : null;
   if (!base) base = await ctx.git.originHead(repoRoot);
   if (!base) throw new Error('default branch cannot be resolved');
 
   await ctx.git.fetch(repoRoot);
-  await ctx.git.createBranch(repoRoot, branch, base);
+  if (!exists) await ctx.git.createBranch(repoRoot, branch, base);
 
   const dir = ensureAttempt(repoRoot, input.runId, input.attempt);
   const intake = issue

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Contract, Flow } from '../../../src/domain/types.js';
 import type { PhaseInput } from '../../../src/engine/runEngine.js';
 import { ensureAttempt } from '../../../src/engine/playbook/runFolder.js';
-import type { GitPort, WorkerPort, WorkerReport, WorkerTask } from '../../../src/engine/playbook/ports.js';
+import type { GitPort, WorkerPort, WorkerReport, WorkerStatus, WorkerTask } from '../../../src/engine/playbook/ports.js';
 import type { FilesPort } from '../../../src/runs/runService.js';
 import type { SqliteRunStore } from '../../../src/store/runStore.js';
 import { runVerifyPhase } from '../../../src/engine/playbook/phases/verifyPhase.js';
@@ -65,6 +65,8 @@ function setup(options: {
   diffNames?: string[];
   reviewerNotes?: string[];
   verifierNotes?: string;
+  onTask?: (task: WorkerTask) => void;
+  block?: 'reviewer' | 'verifier';
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cf-verify-phase-'));
   const workerRuns: WorkerTask[] = [];
@@ -97,7 +99,11 @@ function setup(options: {
           notes = options.verifierNotes ?? '';
         }
       }
-      const report: WorkerReport = { status: 'done', filesChanged: [], notes, route: task.role };
+      options.onTask?.(task);
+      let status: WorkerStatus = 'done';
+      if (options.block === 'reviewer' && task.unitId.startsWith('review-')) status = 'blocked';
+      if (options.block === 'verifier' && task.unitId === 'verifier') status = 'blocked';
+      const report: WorkerReport = { status, filesChanged: [], notes, route: task.role };
       return report;
     },
   };
@@ -340,6 +346,66 @@ describe('runVerifyPhase', () => {
       criterionIds: ['ac-1'],
       summary: 'baseline resolved 0 baseline open 0 deferred 0',
     });
+  });
+
+  it('commits a fix round that changes files and reverts paths outside the group', async () => {
+    let dirty = false;
+    const commits: string[] = [];
+    const reverts: string[][] = [];
+    const deletes: string[][] = [];
+    const trace: string[] = [];
+    const h = setup({
+      reviewerNotes: [MUST, 'BASE M1 resolved'],
+      verifierNotes: '',
+      onTask: (task) => {
+        trace.push(task.unitId);
+        if (task.role === 'implement') dirty = true;
+      },
+      git: {
+        statusPorcelain: async () => (dirty ? ' M src/a.ts\n M src/other.ts\n?? stray.ts' : ''),
+        commitAll: async (_repo, message) => {
+          commits.push(message);
+          trace.push(`commit:${message}`);
+          dirty = false;
+        },
+        revert: async (_repo, paths) => { reverts.push(paths); },
+        deleteUntracked: async (_repo, paths) => { deletes.push(paths); },
+      },
+    });
+    const output = await runVerifyPhase(h.input, h.ctx);
+    expect(reverts.flat()).toContain('src/other.ts');
+    expect(reverts.flat()).not.toContain('src/a.ts');
+    expect(deletes.flat()).toEqual(['stray.ts']);
+    expect(commits).toEqual(['fix: pass-1 must-fix']);
+    const commitAt = trace.indexOf('commit:fix: pass-1 must-fix');
+    const reviews = trace.filter((item) => item === 'review-all');
+    expect(reviews).toHaveLength(2);
+    expect(commitAt).toBeGreaterThan(trace.indexOf('fix-M1'));
+    expect(trace.lastIndexOf('review-all')).toBeGreaterThan(commitAt);
+    expect(output.evidence[0].kind).toBe('verification-check');
+  });
+
+  it('does not commit a fix round that changes nothing', async () => {
+    const commits: string[] = [];
+    const h = setup({
+      reviewerNotes: [MUST, 'BASE M1 resolved'],
+      verifierNotes: '',
+      git: { commitAll: async (_repo, message) => { commits.push(message); } },
+    });
+    await runVerifyPhase(h.input, h.ctx);
+    expect(fixes(h.workerRuns)).toHaveLength(1);
+    expect(commits).toEqual([]);
+  });
+
+  it('throws when a reviewer or the verifier is blocked and does not finish verification', async () => {
+    const reviewer = setup({ block: 'reviewer', reviewerNotes: [MUST] });
+    await expect(runVerifyPhase(reviewer.input, reviewer.ctx)).rejects.toThrow('review blocked');
+    expect(readFileSync(join(reviewer.dir, 'status.md'), 'utf8')).not.toContain('- phase: verify');
+
+    const verifier = setup({ block: 'verifier', reviewerNotes: [MUST], verifierNotes: 'DISPROVE M1 covered' });
+    await expect(runVerifyPhase(verifier.input, verifier.ctx)).rejects.toThrow('verifier blocked');
+    expect(readFileSync(join(verifier.dir, 'status.md'), 'utf8')).not.toContain('- phase: verify');
+    expect(fixes(verifier.workerRuns)).toHaveLength(0);
   });
 
   it('throws when the working tree is dirty and does not dispatch a worker', async () => {

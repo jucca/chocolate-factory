@@ -36,6 +36,7 @@ const GATE_AFTER_PHASE: Partial<Record<Phase, GateId>> = { spec: 'spec', plan: '
 const now = () => new Date().toISOString();
 
 export class RunService {
+  private advancing = new Map<string, Promise<RunRecord>>();
   constructor(private deps: { store: SqliteRunStore; engine: RunEngine; files: FilesPort; config: FactoryConfig; repoRoot: string }) {}
 
   claim(input: { issue: IssueRef | null; contract: Contract; contractRevision: string; flow?: Flow; engine?: EngineKind }): RunRecord {
@@ -74,7 +75,17 @@ export class RunService {
     return run;
   }
 
-  async advance(runId: string): Promise<RunRecord> {
+  advance(runId: string): Promise<RunRecord> {
+    const current = this.advancing.get(runId);
+    if (current) return current;
+    const promise = this.advanceRun(runId).finally(() => {
+      this.advancing.delete(runId);
+    });
+    this.advancing.set(runId, promise);
+    return promise;
+  }
+
+  private async advanceRun(runId: string): Promise<RunRecord> {
     let run = this.mustRun(runId);
     if (run.state === 'commit-ready' || run.state === 'failed' || run.state === 'awaiting-decision') return run;
 

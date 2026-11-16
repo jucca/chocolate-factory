@@ -6,6 +6,7 @@ import { dispatchWorker } from '../dispatchWorker.js';
 import { buildWaves, parseAcceptanceIds, parsePlan, topLevelDirs, type WorkUnit } from '../planDoc.js';
 import type { CommandResult } from '../ports.js';
 import type { PhaseContext } from './specPhase.js';
+import { porcelainEntries, revertOutside } from '../porcelain.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
 
 const WHERE = 'Where does the behavior live?';
@@ -59,9 +60,20 @@ async function planBug(input: PhaseInput, ctx: PhaseContext, dir: string): Promi
   const second = await ctx.commands.run(ctx.repoRoot, command);
   if (!sameFailure(first, second)) throw new Error('failure is not deterministic');
   const allowed = reproValue(repro, 'allowed');
-  if (allowed === reproTestPath(reproValue(repro, 'test'))) throw new Error('repro test is not an allowed file');
+  const testPath = reproTestPath(reproValue(repro, 'test'));
+  if (allowed === testPath) throw new Error('repro test is not an allowed file');
+  await commitReproTest(ctx, testPath);
   writeFileSync(join(dir, 'plan.md'), oneUnitPlan(allowed, command));
   return finishPlan(input, ctx, dir);
+}
+
+async function commitReproTest(ctx: PhaseContext, testPath: string): Promise<void> {
+  if (!testPath) return;
+  const porcelain = await ctx.git.statusPorcelain(ctx.repoRoot);
+  const entries = porcelainEntries(porcelain);
+  await revertOutside(ctx.git, ctx.repoRoot, porcelain, new Set([testPath]));
+  if (!entries.some((entry) => entry.path === testPath)) return;
+  await ctx.git.commitAll(ctx.repoRoot, 'test: reproduce the bug');
 }
 
 function finishPlan(input: PhaseInput, ctx: PhaseContext, dir: string): PhaseOutput {
