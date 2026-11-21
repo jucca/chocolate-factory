@@ -1,4 +1,7 @@
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { porcelainEntries } from './porcelain.js';
+import type { ToolboxGit } from './ports.js';
 
 export const TOOLBOX_DIR = 'chocolate-tools';
 export const NOTES_CAP = 80;
@@ -92,4 +95,37 @@ export function implementToolboxPrompt(drop: string | null): string {
   ];
   if (drop) lines.push(`Drop: ${drop}`);
   return lines.join('\n');
+}
+
+export async function readToolboxText(git: ToolboxGit | undefined, repoRoot: string, sha: string): Promise<string> {
+  if (!git) return '';
+  const manifest = (await git.show(repoRoot, sha, `${TOOLBOX_DIR}/manifest.md`)) ?? '';
+  const notes = (await git.show(repoRoot, sha, `${TOOLBOX_DIR}/NOTES.md`)) ?? '';
+  return renderToolbox(manifest, notes);
+}
+
+export function latestDrop(repoRoot: string, present: readonly string[]): string | null {
+  const runs = join(repoRoot, '.chocolate', 'runtime', 'runs');
+  if (!existsSync(runs)) return null;
+  let best: { mtime: number; drop: string } | null = null;
+  for (const runId of readdirSync(runs)) {
+    const runDir = join(runs, runId);
+    if (!statSync(runDir).isDirectory()) continue;
+    for (const attempt of readdirSync(runDir)) {
+      const path = join(runDir, attempt, 'reflect.md');
+      if (!existsSync(path)) continue;
+      const mtime = statSync(path).mtimeMs;
+      const drop = dropName(readFileSync(path, 'utf8'));
+      if (drop && (!best || mtime >= best.mtime)) best = { mtime, drop };
+    }
+  }
+  if (!best || best.drop === 'none' || !present.includes(best.drop)) return null;
+  return best.drop;
+}
+
+function dropName(markdown: string): string | null {
+  for (const line of markdown.split('\n')) {
+    if (line.startsWith('DROP:')) return line.slice('DROP:'.length).trim();
+  }
+  return null;
 }
