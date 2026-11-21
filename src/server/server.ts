@@ -1,5 +1,4 @@
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { buildApp } from './app.js';
 import { SqliteRunStore } from '../store/runStore.js';
@@ -14,10 +13,6 @@ import { ShellCommandRunner } from '../engine/playbook/commandRunner.js';
 import { PlaybookRunEngine } from '../engine/playbook/playbookEngine.js';
 import { DispatchRunEngine } from '../engine/playbook/dispatchEngine.js';
 import { RunWalker } from '../engine/playbook/walker.js';
-
-function readPlaybook(name: string): string {
-  return readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'engine', 'playbooks', name), 'utf8');
-}
 
 export async function startServer(repoRoot: string): Promise<void> {
   const data = loadChocolate(repoRoot);
@@ -40,7 +35,7 @@ export async function startServer(repoRoot: string): Promise<void> {
     }),
     commands: new ShellCommandRunner(),
     ci: { waitMs: 60 * 60 * 1000, extraIntervalMs: 30_000 },
-    readPlaybook,
+    readPlaybook: () => '',
   });
   const engine = new DispatchRunEngine({ store, simulator: new SimulatorRunEngine(), playbook });
   const runService = new RunService({ store, engine, files, config, repoRoot });
