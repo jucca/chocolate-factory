@@ -595,6 +595,21 @@ it('holds one new tool and reverts a playbook edit', async () => {
   expect(reverted).not.toContain('chocolate-tools/widget/a.js');
   expect(h.workerRuns[0].prompt).toContain('Toolbox rule:');
 });
+
+it('reverts an in-place toolbox edit when no directory was added', async () => {
+  const h = setup({
+    toolboxGit: {
+      show: async () => '## old\nuse: u\ntest: node old.js\n',
+      restoreTree: async () => {},
+    },
+    manifest: '## old\nuse: u\ntest: node old.js\n',
+    git: {
+      statusPorcelain: async () => ' M chocolate-tools/old/a.js\n',
+    },
+  });
+  await runImplementPhase(h.input, h.ctx);
+  expect(h.reverts.flat()).toContain('chocolate-tools/old/a.js');
+});
 ```
 
 The existing `setup` return value must expose `reverts`, `workerRuns`, `input`, and `ctx`. It already returns those names if the current return object uses them; if a name differs, use the name the harness already returns and do not rename the existing fields. Add `toolboxGit` onto `ctx` only for this test's option. Do not require `toolboxGit` for the other tests.
@@ -727,7 +742,7 @@ async function legalToolboxHold(ctx: PhaseContext, dir: string, porcelain: strin
     notesLines,
     notesChanged: headNotes !== baseNotes,
     tests,
-  });
+  }) && added.length === 1;
   return toolboxHoldPaths(porcelain, accept);
 }
 ```
