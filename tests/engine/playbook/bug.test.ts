@@ -187,6 +187,7 @@ function startWalk(options: WalkOptions = {}): Harness {
     commands,
     ci: { waitMs: 0, extraIntervalMs: 0 },
     readPlaybook: () => '',
+    squeez: { async doctor() { return { status: 'ok' as const, output: '' }; } },
   });
   const runs = new RunService({ store, engine, files, config: factory, repoRoot: root });
   const walker = new RunWalker(runs);

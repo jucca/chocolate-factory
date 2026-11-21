@@ -9,6 +9,8 @@ import { runPlanPhase } from './phases/planPhase.js';
 import { runSpecPhase, type PhaseContext } from './phases/specPhase.js';
 import { runTestPhase } from './phases/testPhase.js';
 import { runVerifyPhase } from './phases/verifyPhase.js';
+import { recordSqueezDoctor } from './recordSqueezDoctor.js';
+import { ensureAttempt } from './runFolder.js';
 
 function readPlaybook(name: string): string {
   return readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'playbooks', name), 'utf8');
@@ -20,6 +22,8 @@ export class PlaybookRunEngine implements RunEngine {
   async runPhase(input: PhaseInput): Promise<PhaseOutput> {
     const run = this.ctx.store.getRun(input.runId);
     if (!run) throw new Error(`unknown run ${input.runId}`);
+    const dir = ensureAttempt(this.ctx.repoRoot, input.runId, input.attempt);
+    await recordSqueezDoctor(dir, this.ctx.squeez);
     const flow: Flow = run.flow;
     const ctx = { ...this.ctx, flow, readPlaybook };
     switch (input.phase) {

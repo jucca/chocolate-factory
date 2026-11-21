@@ -12,6 +12,7 @@ import { ForgeCli } from '../engine/playbook/forgeCli.js';
 import { ProcessWorker } from '../engine/playbook/processWorker.js';
 import { ShellCommandRunner } from '../engine/playbook/commandRunner.js';
 import { PlaybookRunEngine } from '../engine/playbook/playbookEngine.js';
+import { ProcessSqueezDoctor } from '../engine/playbook/processSqueezDoctor.js';
 import { DispatchRunEngine } from '../engine/playbook/dispatchEngine.js';
 import { RunWalker } from '../engine/playbook/walker.js';
 
@@ -41,6 +42,7 @@ export async function startServer(repoRoot: string): Promise<void> {
     commands: new ShellCommandRunner(),
     ci: { waitMs: 60 * 60 * 1000, extraIntervalMs: 30_000 },
     readPlaybook,
+    squeez: new ProcessSqueezDoctor(),
   });
   const engine = new DispatchRunEngine({ store, simulator: new SimulatorRunEngine(), playbook });
   const runService = new RunService({ store, engine, files, config, repoRoot });
