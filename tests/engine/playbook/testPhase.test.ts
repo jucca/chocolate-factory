@@ -137,6 +137,7 @@ function setup(options: {
     },
     ci: { waitMs: 0, extraIntervalMs: 0 },
     readPlaybook: () => { throw new Error('playbook was read'); },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     flow: options.flow ?? 'feature',
   };
   return { root, dir, input, ctx, workerRuns, commandRuns, diffCalls, order };

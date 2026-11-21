@@ -152,6 +152,7 @@ function setup(options: {
       if (name !== 'commit.md') throw new Error(`playbook ${name} was read`);
       return readFileSync(PLAYBOOK_PATH, 'utf8');
     },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     flow: options.flow ?? 'feature' as Flow,
   };
   return { root, dir, input, ctx, workerRuns, pushes, remoteCalls, prs, checkCalls, reruns, logIds, commits, trace };
