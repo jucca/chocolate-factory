@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SqueezDoctor, SqueezDoctorReport } from '../../../src/engine/playbook/ports.js';
+import { ProcessSqueezDoctor } from '../../../src/engine/playbook/processSqueezDoctor.js';
 import { recordSqueezDoctor } from '../../../src/engine/playbook/recordSqueezDoctor.js';
 import { ensureAttempt } from '../../../src/engine/playbook/runFolder.js';
 
@@ -59,5 +60,51 @@ describe('recordSqueezDoctor', () => {
       await recordSqueezDoctor(dir, probe({ status, output: status }, { n: 0 }));
       expect(readFileSync(join(dir, 'status.md'), 'utf8')).toContain(`- squeez-doctor: ${status}\n`);
     }
+  });
+});
+
+describe('ProcessSqueezDoctor', () => {
+  it('returns ok and concatenates stdout and stderr', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cf-squeez-bin-'));
+    const script = join(root, 'doctor.mjs');
+    writeFileSync(script, "process.stdout.write('OUT'); process.stderr.write('ERR');\n");
+    const report = await new ProcessSqueezDoctor({ command: [process.execPath, script] }).doctor();
+    expect(report).toEqual({ status: 'ok', output: 'OUTERR' });
+  });
+
+  it('returns failed with the exit line when the capture is empty', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cf-squeez-bin-'));
+    const script = join(root, 'doctor.mjs');
+    writeFileSync(script, 'process.exit(3);\n');
+    const report = await new ProcessSqueezDoctor({ command: [process.execPath, script] }).doctor();
+    expect(report).toEqual({ status: 'failed', output: 'squeez doctor exited 3' });
+  });
+
+  it('returns unavailable when the executable is missing', async () => {
+    const report = await new ProcessSqueezDoctor({ command: ['/this/squeez/does/not/exist'] }).doctor();
+    expect(report.status).toBe('unavailable');
+    expect(report.output).toContain('ENOENT');
+  });
+
+  it('returns failed with the timeout line when the process exceeds the limit', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cf-squeez-bin-'));
+    const script = join(root, 'doctor.mjs');
+    writeFileSync(script, 'setInterval(() => {}, 1000);\n');
+    const report = await new ProcessSqueezDoctor({
+      command: [process.execPath, script],
+      timeoutMs: 200,
+    }).doctor();
+    expect(report).toEqual({ status: 'failed', output: 'squeez doctor timed out after 200ms' });
+  });
+
+  it('returns failed with the size line when output exceeds maxBuffer', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cf-squeez-bin-'));
+    const script = join(root, 'doctor.mjs');
+    writeFileSync(script, "process.stdout.write('x'.repeat(50));\n");
+    const report = await new ProcessSqueezDoctor({
+      command: [process.execPath, script],
+      maxBuffer: 20,
+    }).doctor();
+    expect(report).toEqual({ status: 'failed', output: 'squeez doctor report exceeded 20 bytes' });
   });
 });
