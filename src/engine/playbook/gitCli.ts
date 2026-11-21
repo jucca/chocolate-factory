@@ -107,4 +107,25 @@ export class GitCli implements GitPort {
       if (existsSync(abs)) unlinkSync(abs);
     }
   }
+
+  async show(repoRoot: string, rev: string, path: string): Promise<string | null> {
+    try {
+      return await git(repoRoot, ['show', `${rev}:${path}`]);
+    } catch {
+      return null;
+    }
+  }
+
+  async restoreTree(repoRoot: string, rev: string, path: string): Promise<void> {
+    try {
+      await git(repoRoot, ['checkout', rev, '--', path]);
+    } catch {
+      // The path is absent at that revision.
+    }
+    try {
+      await git(repoRoot, ['clean', '-fd', '--', path]);
+    } catch {
+      // Nothing untracked under that path.
+    }
+  }
 }

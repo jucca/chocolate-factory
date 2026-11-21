@@ -56,4 +56,17 @@ describe('GitCli', () => {
     await cli.revert(root, []);
     await cli.deleteUntracked(root, ['missing.txt']);
   });
+
+  it('shows a file at a revision and restores that tree', async () => {
+    const root = initRepo();
+    const cli = new GitCli();
+    const base = await cli.headSha(root);
+    expect(await cli.show(root, base, 'missing')).toBeNull();
+    expect(await cli.show(root, base, 'README')).toBe('hello\n');
+    writeFileSync(join(root, 'README'), 'dirty\n');
+    writeFileSync(join(root, 'extra.txt'), 'x\n');
+    await cli.restoreTree(root, base, 'README');
+    expect(readFileSync(join(root, 'README'), 'utf8')).toBe('hello\n');
+    expect(await cli.statusPorcelain(root)).not.toContain('README');
+  });
 });
