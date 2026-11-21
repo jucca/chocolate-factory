@@ -79,3 +79,14 @@ export interface ForgePort {
   rerunFailed(repoRoot: string, runId: string): Promise<void>;
   failedLog(repoRoot: string, runId: string): Promise<string>;
 }
+
+export type SqueezDoctorStatus = 'ok' | 'failed' | 'unavailable';
+
+export interface SqueezDoctorReport {
+  status: SqueezDoctorStatus;
+  output: string;
+}
+
+export interface SqueezDoctor {
+  doctor(): Promise<SqueezDoctorReport>;
+}
