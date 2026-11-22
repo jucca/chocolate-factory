@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { Contract, Flow, GateId } from '../../../domain/types.js';
 import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
-import type { CommandRunner, ForgePort, GitPort, ToolboxGit, WorkerPort } from '../ports.js';
+import type { CommandRunner, ForgePort, GitPort, SqueezDoctor, ToolboxGit, WorkerPort } from '../ports.js';
 import { dispatchWorker } from '../dispatchWorker.js';
 import { appendStatus, ensureAttempt } from '../runFolder.js';
 import { readToolboxText, toolboxPrompt } from '../toolbox.js';
@@ -19,6 +19,7 @@ export interface PhaseContext {
   commands: CommandRunner;
   ci: { waitMs: number; extraIntervalMs: number };
   readPlaybook: (name: string) => string;
+  squeez: SqueezDoctor;
   toolboxGit?: ToolboxGit;
 }
 

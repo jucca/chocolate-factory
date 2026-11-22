@@ -190,6 +190,7 @@ function setup(options: {
       if (name !== 'implement.md') throw new Error(`unexpected playbook ${name}`);
       return readFileSync(PLAYBOOK_PATH, 'utf8');
     },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     flow,
     ...(options.toolboxGit ? { toolboxGit: options.toolboxGit } : {}),
   };

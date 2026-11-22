@@ -232,6 +232,7 @@ function setup(options: {
       if (name !== 'plan-feature.md') throw new Error(`unexpected playbook ${name}`);
       return PLAYBOOK;
     },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     flow: options.flow ?? 'feature' as Flow,
   };
   return { root, dir, input, ctx, saved, updates, workerRuns, subject };

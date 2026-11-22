@@ -154,6 +154,7 @@ function setup(options: {
       if (name !== 'plan-bug.md') throw new Error(`unexpected playbook ${name}`);
       return PLAYBOOK;
     },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     flow: 'bug' as Flow,
   };
   return { root, dir, input, ctx, saved, updates, workerRuns, commandRuns, subject };

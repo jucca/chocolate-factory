@@ -140,6 +140,7 @@ function setup(options: { git?: Partial<GitPort>; forge?: Partial<ForgePort>; fl
       if (name !== 'spec.md') throw new Error(`unexpected playbook ${name}`);
       return PLAYBOOK;
     },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     toolboxGit: options.toolboxGit,
     flow: options.flow ?? 'feature' as Flow,
   };

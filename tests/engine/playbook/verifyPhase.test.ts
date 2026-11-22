@@ -139,6 +139,7 @@ function setup(options: {
       if (name !== 'verify.md') throw new Error(`playbook ${name} was read`);
       return PLAYBOOK;
     },
+    squeez: { async doctor() { throw new Error('phase test must not probe'); } },
     flow: options.flow ?? 'feature',
   };
   return { root, dir, input, ctx, workerRuns, diffCalls, lineCalls };

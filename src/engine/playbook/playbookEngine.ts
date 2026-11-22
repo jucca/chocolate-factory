@@ -7,6 +7,8 @@ import { runSpecPhase, type PhaseContext } from './phases/specPhase.js';
 import { runTestPhase } from './phases/testPhase.js';
 import { runVerifyPhase } from './phases/verifyPhase.js';
 import { loadPlaybookSnapshot, playbookDir } from './playbookSnapshot.js';
+import { recordSqueezDoctor } from './recordSqueezDoctor.js';
+import { ensureAttempt } from './runFolder.js';
 
 export class PlaybookRunEngine implements RunEngine {
   private snapshot: Record<string, string>;
@@ -22,6 +24,8 @@ export class PlaybookRunEngine implements RunEngine {
   async runPhase(input: PhaseInput): Promise<PhaseOutput> {
     const run = this.ctx.store.getRun(input.runId);
     if (!run) throw new Error(`unknown run ${input.runId}`);
+    const dir = ensureAttempt(this.ctx.repoRoot, input.runId, input.attempt);
+    await recordSqueezDoctor(dir, this.ctx.squeez);
     const flow: Flow = run.flow;
     const readPlaybook = (name: string) => this.playbook(name);
     const ctx = { ...this.ctx, flow, readPlaybook };
