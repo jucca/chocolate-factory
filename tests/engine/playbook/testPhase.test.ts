@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Contract, Flow } from '../../../src/domain/types.js';
 import type { PhaseInput } from '../../../src/engine/runEngine.js';
 import { ensureAttempt } from '../../../src/engine/playbook/runFolder.js';
-import type { CommandResult, GitPort, WorkerPort, WorkerReport, WorkerTask } from '../../../src/engine/playbook/ports.js';
+import type { CommandResult, GitPort, ToolboxGit, WorkerPort, WorkerReport, WorkerTask } from '../../../src/engine/playbook/ports.js';
 import type { FilesPort } from '../../../src/runs/runService.js';
 import type { SqliteRunStore } from '../../../src/store/runStore.js';
 import { runTestPhase } from '../../../src/engine/playbook/phases/testPhase.js';
@@ -63,6 +63,11 @@ function contract(): Contract {
   };
 }
 
+function widgetManifest(root: string): void {
+  mkdirSync(join(root, 'chocolate-tools'), { recursive: true });
+  writeFileSync(join(root, 'chocolate-tools/manifest.md'), '## widget\nuse: u\ntest: node t.js\n');
+}
+
 function setup(options: {
   flow?: Flow;
   git?: Partial<GitPort>;
@@ -72,6 +77,7 @@ function setup(options: {
   repro?: string;
   plan?: string;
   onTask?: (task: WorkerTask) => void;
+  toolboxGit?: ToolboxGit;
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cf-test-phase-'));
   const workerRuns: WorkerTask[] = [];
@@ -138,6 +144,7 @@ function setup(options: {
     ci: { waitMs: 0, extraIntervalMs: 0 },
     readPlaybook: () => { throw new Error('playbook was read'); },
     flow: options.flow ?? 'feature',
+    toolboxGit: options.toolboxGit,
   };
   return { root, dir, input, ctx, workerRuns, commandRuns, diffCalls, order };
 }
@@ -318,5 +325,63 @@ describe('runTestPhase', () => {
     await expect(runTestPhase(h.input, h.ctx)).rejects.toThrow('HEAD is main, expected feat/gh-7');
     expect(h.workerRuns).toHaveLength(0);
     expect(h.commandRuns).toHaveLength(0);
+  });
+
+  it('reverts a tool whose test leaves the tree dirty and continues', async () => {
+    let porcelainCalls = 0;
+    const restored: string[] = [];
+    const committed: string[] = [];
+    const h = setup({
+      toolboxGit: {
+        show: async () => '',
+        restoreTree: async (_root, _rev, path) => { restored.push(path); },
+      },
+      git: {
+        statusPorcelain: async () => {
+          porcelainCalls += 1;
+          return porcelainCalls === 1 ? '' : ' M src/a.ts';
+        },
+        commitAll: async (_root, message) => { committed.push(message); },
+      },
+      results: { 'node t.js': [{ ok: true, output: '' }] },
+    });
+    widgetManifest(h.root);
+    await runTestPhase(h.input, h.ctx);
+    expect(h.order[0]).toBe('cmd:node t.js');
+    expect(restored).toEqual(['chocolate-tools']);
+    expect(committed).toContain('chore: revert toolbox');
+    expect(readFileSync(join(h.dir, 'status.md'), 'utf8')).toContain('tool: reverted widget');
+    expect(h.order).toContain('cmd:pnpm test');
+  });
+
+  it('reverts a tool whose test fails and still runs the plan', async () => {
+    const restored: string[] = [];
+    const h = setup({
+      toolboxGit: {
+        show: async () => '',
+        restoreTree: async (_root, _rev, path) => { restored.push(path); },
+      },
+      results: { 'node t.js': [{ ok: false, output: 'no' }] },
+    });
+    widgetManifest(h.root);
+    await runTestPhase(h.input, h.ctx);
+    expect(restored).toEqual(['chocolate-tools']);
+    expect(h.order.filter((item) => item === 'cmd:node t.js')).toHaveLength(1);
+    expect(h.order).toContain('cmd:pnpm test');
+  });
+
+  it('keeps a tool whose test passes on a clean tree', async () => {
+    const restored: string[] = [];
+    const h = setup({
+      toolboxGit: {
+        show: async () => '',
+        restoreTree: async (_root, _rev, path) => { restored.push(path); },
+      },
+      results: { 'node t.js': [{ ok: true, output: '' }] },
+    });
+    widgetManifest(h.root);
+    await runTestPhase(h.input, h.ctx);
+    expect(restored).toEqual([]);
+    expect(readFileSync(join(h.dir, 'status.md'), 'utf8')).not.toContain('tool: reverted');
   });
 });
