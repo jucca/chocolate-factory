@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Contract, Flow } from '../../../src/domain/types.js';
 import type { PhaseInput } from '../../../src/engine/runEngine.js';
 import { ensureAttempt } from '../../../src/engine/playbook/runFolder.js';
-import type { CommandResult, GitPort, WorkerPort, WorkerReport, WorkerTask } from '../../../src/engine/playbook/ports.js';
+import type { CommandResult, GitPort, ToolboxGit, WorkerPort, WorkerReport, WorkerTask } from '../../../src/engine/playbook/ports.js';
 import type { FilesPort } from '../../../src/runs/runService.js';
 import type { SqliteRunStore } from '../../../src/store/runStore.js';
 import { runImplementPhase } from '../../../src/engine/playbook/phases/implementPhase.js';
@@ -89,6 +89,8 @@ function setup(options: {
   repro?: string;
   overlap?: boolean;
   diffResult?: string[];
+  toolboxGit?: ToolboxGit;
+  manifest?: string;
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cf-implement-'));
   const workerRuns: WorkerTask[] = [];
@@ -102,6 +104,10 @@ function setup(options: {
   writeFileSync(join(dir, 'status.md'), '- branch: feat/gh-7\n- base: main@abc\n');
   writeFileSync(join(dir, 'plan.md'), options.plan ?? DEFAULT_PLAN);
   if (options.repro !== undefined) writeFileSync(join(dir, 'repro.md'), options.repro);
+  if (options.manifest !== undefined) {
+    mkdirSync(join(root, 'chocolate-tools'), { recursive: true });
+    writeFileSync(join(root, 'chocolate-tools/manifest.md'), options.manifest);
+  }
   const flow = options.flow ?? 'feature';
   let started = 0;
   let release: () => void = () => {};
@@ -185,6 +191,7 @@ function setup(options: {
       return readFileSync(PLAYBOOK_PATH, 'utf8');
     },
     flow,
+    ...(options.toolboxGit ? { toolboxGit: options.toolboxGit } : {}),
   };
   return { root, dir, input, ctx, workerRuns, commandRuns, commits, reverts, deletes, diffCalls, saved };
 }
@@ -519,6 +526,72 @@ describe('runImplementPhase', () => {
     await expect(runImplementPhase(h.input, h.ctx)).rejects.toThrow('HEAD is main, expected feat/gh-7');
     expect(h.workerRuns).toHaveLength(0);
     expect(h.commits).toHaveLength(0);
+  });
+
+  it('holds one new tool and reverts a playbook edit', async () => {
+    const rootFiles: Record<string, string | null> = { 'chocolate-tools/manifest.md': '' };
+    let reads = 0;
+    const h = setup({
+      toolboxGit: {
+        show: async (_root, _rev, path) => rootFiles[path] ?? null,
+        restoreTree: async () => {},
+      },
+      manifest: '## widget\nuse: u\ntest: node t.js\n',
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1
+            ? ''
+            : '?? chocolate-tools/widget/a.js\n?? chocolate-tools/manifest.md\n M src/engine/playbooks/spec.md\n';
+        },
+      },
+    });
+    await runImplementPhase(h.input, h.ctx);
+    const reverted = h.reverts.flat();
+    expect(reverted).toContain('src/engine/playbooks/spec.md');
+    expect(reverted).not.toContain('chocolate-tools/widget/a.js');
+    expect(h.deletes.flat()).not.toContain('chocolate-tools/widget/a.js');
+    expect(h.deletes.flat()).not.toContain('chocolate-tools/manifest.md');
+    expect(h.workerRuns[0].prompt).toContain('Toolbox rule:');
+  });
+
+  it('keeps an allowed chocolate-tools file when toolboxGit is absent', async () => {
+    let reads = 0;
+    const h = setup({
+      plan: plan([
+        { id: 'U1', files: 'chocolate-tools/widget/a.js', verify: 'pnpm test a' },
+        { id: 'U2', files: 'src/b.ts', verify: 'pnpm test b' },
+      ]),
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1 ? '' : '?? chocolate-tools/widget/a.js\n';
+        },
+      },
+    });
+    await runImplementPhase(h.input, h.ctx);
+    expect(h.ctx.toolboxGit).toBeUndefined();
+    expect(h.reverts.flat()).not.toContain('chocolate-tools/widget/a.js');
+    expect(h.deletes.flat()).not.toContain('chocolate-tools/widget/a.js');
+  });
+
+  it('reverts an in-place toolbox edit when no directory was added', async () => {
+    let reads = 0;
+    const h = setup({
+      toolboxGit: {
+        show: async () => '## old\nuse: u\ntest: node old.js\n',
+        restoreTree: async () => {},
+      },
+      manifest: '## old\nuse: u\ntest: node old.js\n',
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1 ? '' : ' M chocolate-tools/old/a.js\n';
+        },
+      },
+    });
+    await runImplementPhase(h.input, h.ctx);
+    expect(h.reverts.flat()).toContain('chocolate-tools/old/a.js');
   });
 });
 

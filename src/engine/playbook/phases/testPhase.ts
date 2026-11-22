@@ -6,6 +6,7 @@ import { dispatchWorker } from '../dispatchWorker.js';
 import type { CommandResult } from '../ports.js';
 import { revertOutside } from '../porcelain.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
+import { diffDirectories, parseManifest } from '../toolbox.js';
 import type { PhaseContext } from './specPhase.js';
 
 const INTEGRATION_UNITS = ['integrate-1', 'integrate-2'] as const;
@@ -24,6 +25,7 @@ export async function runTestPhase(input: PhaseInput, ctx: PhaseContext & { flow
   const actual = await ctx.git.headBranch(repoRoot);
   if (actual !== expected) throw new Error(`HEAD is ${actual}, expected ${expected}`);
 
+  await runNewToolTest(ctx, dir);
   const commands = testCommands(readFileSync(join(dir, 'plan.md'), 'utf8'));
   await runUntilGreen(ctx, dir, commands);
   if (ctx.flow === 'bug') await checkRepro(ctx, dir);
@@ -40,6 +42,34 @@ export async function runTestPhase(input: PhaseInput, ctx: PhaseContext & { flow
       summary: commands.map((command) => `${command} ok`).join('\n'),
     }],
   };
+}
+
+async function runNewToolTest(ctx: PhaseContext, dir: string): Promise<void> {
+  if (!ctx.toolboxGit) return;
+  const base = readStatusValue(dir, 'base');
+  const at = base?.lastIndexOf('@') ?? -1;
+  if (!base || at < 0 || at === base.length - 1) return;
+  const sha = base.slice(at + 1);
+  const baseManifest = (await ctx.toolboxGit.show(ctx.repoRoot, sha, 'chocolate-tools/manifest.md')) ?? '';
+  const manifestPath = join(ctx.repoRoot, 'chocolate-tools', 'manifest.md');
+  if (!existsSync(manifestPath)) return;
+  const headEntries = parseManifest(readFileSync(manifestPath, 'utf8'));
+  const { added } = diffDirectories(
+    parseManifest(baseManifest).map((entry) => entry.name),
+    headEntries.map((entry) => entry.name),
+  );
+  if (added.length !== 1) return;
+  const entry = headEntries.find((item) => item.name === added[0]);
+  if (!entry || entry.test.trim() === '') return;
+  const result = await ctx.commands.run(ctx.repoRoot, entry.test);
+  appendOutput(dir, entry.test, result);
+  const dirty = (await ctx.git.statusPorcelain(ctx.repoRoot)) !== '';
+  if (result.ok && !dirty) return;
+  await ctx.toolboxGit.restoreTree(ctx.repoRoot, sha, 'chocolate-tools');
+  if ((await ctx.git.statusPorcelain(ctx.repoRoot)) !== '') {
+    await ctx.git.commitAll(ctx.repoRoot, 'chore: revert toolbox');
+  }
+  appendStatus(dir, `- tool: reverted ${entry.name}`);
 }
 
 async function runUntilGreen(ctx: PhaseContext, dir: string, commands: string[]): Promise<void> {
