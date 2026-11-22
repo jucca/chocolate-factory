@@ -209,4 +209,49 @@ describe('RunService', () => {
     await svc.actOnGate(run.id, { gate: 'spec', action: 'override', reason: 'ship the brief' });
     expect(store.getRun(run.id)?.phase).toBe('plan');
   });
+
+  it('calls onTerminal once when a playbook run fails and not for the simulator', async () => {
+    const seen: string[] = [];
+    const files = {
+      load: () => ({
+        contracts: [contract],
+        invalidContracts: [],
+        roadmap: { milestones: [{ id: 'm1', title: 'M1', intent: 'x', contracts: ['feat-a'] }] },
+        roadmapError: null,
+        config: { ...DEFAULT_CONFIG, workers: { default: { command: ['node'] }, implement: { command: ['node'] } } },
+        crossRefErrors: [],
+      }),
+      readContractFile: () => 'rev',
+      saveContract: () => 'rev2',
+    };
+    const engine = { runPhase: async () => { throw new Error('boom'); } };
+    const playbook = new RunService({
+      store,
+      engine,
+      files,
+      config: files.load().config,
+      repoRoot: root,
+      onTerminal: async (run) => { seen.push(run.state); },
+    });
+    const run = playbook.claim({ issue: null, contract, contractRevision: 'rev1', engine: 'playbook' });
+    const failed = await playbook.advance(run.id);
+    expect(failed.state).toBe('failed');
+    expect(seen).toEqual(['failed']);
+    await playbook.advance(run.id);
+    expect(seen).toEqual(['failed']);
+
+    const simStore = new SqliteRunStore(join(root, 'sim.db'));
+    const simulator = new RunService({
+      store: simStore,
+      engine,
+      files,
+      config: files.load().config,
+      repoRoot: root,
+      onTerminal: async (run) => { seen.push(run.state); },
+    });
+    const sim = simulator.claim({ issue: null, contract, contractRevision: 'rev1', engine: 'simulator' });
+    const simFailed = await simulator.advance(sim.id);
+    expect(simFailed.state).toBe('failed');
+    expect(seen).toEqual(['failed']);
+  });
 });

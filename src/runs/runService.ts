@@ -37,7 +37,14 @@ const now = () => new Date().toISOString();
 
 export class RunService {
   private advancing = new Map<string, Promise<RunRecord>>();
-  constructor(private deps: { store: SqliteRunStore; engine: RunEngine; files: FilesPort; config: FactoryConfig; repoRoot: string }) {}
+  constructor(private deps: {
+    store: SqliteRunStore;
+    engine: RunEngine;
+    files: FilesPort;
+    config: FactoryConfig;
+    repoRoot: string;
+    onTerminal?: (run: RunRecord) => Promise<void>;
+  }) {}
 
   claim(input: { issue: IssueRef | null; contract: Contract; contractRevision: string; flow?: Flow; engine?: EngineKind }): RunRecord {
     const active = this.deps.store.listRunsByContract(input.contract.id).find((r) => r.state !== 'commit-ready' && r.state !== 'failed');
@@ -94,7 +101,7 @@ export class RunService {
       let contract = data.contracts.find((c) => c.id === run.contractId);
       if (!contract) {
         this.failPhase(run, `contract ${run.contractId} invalid or missing`);
-        return this.mustRun(runId);
+        return this.terminal(runId);
       }
       try {
         const out = await this.deps.engine.runPhase({ phase: run.phase, attempt: run.currentAttempt, contract, runId });
@@ -116,7 +123,7 @@ export class RunService {
         );
       } catch (e) {
         this.failPhase(run, e instanceof Error ? e.message : String(e));
-        return this.mustRun(runId);
+        return this.terminal(runId);
       }
 
       run = this.mustRun(runId);
@@ -154,14 +161,14 @@ export class RunService {
             createdAt: now(),
           });
           this.deps.store.updateRunState(runId, { state: 'failed' });
-          return this.mustRun(runId);
+          return this.terminal(runId);
         }
         this.deps.store.updateRunState(runId, { state: 'awaiting-decision' });
         return this.mustRun(runId);
       }
 
       run = this.moveToNextPhase(run);
-      if (run.state === 'commit-ready') return run;
+      if (run.state === 'commit-ready') return this.terminal(runId);
     }
 
     return this.mustRun(runId);
@@ -224,7 +231,7 @@ export class RunService {
     if (input.action === 'rework') return this.startNewAttempt(runId, input.gate === 'spec' ? 'spec' : 'plan');
     if (input.gate === 'commit') {
       this.deps.store.updateRunState(runId, { state: 'commit-ready' });
-      return this.mustRun(runId);
+      return this.terminal(runId);
     }
     return this.moveToNextPhase(this.mustRun(runId));
   }
@@ -286,6 +293,17 @@ export class RunService {
     }
     this.deps.store.updateRunState(run.id, { phase: next, state: 'running' });
     return this.mustRun(run.id);
+  }
+  private async terminal(runId: string): Promise<RunRecord> {
+    const run = this.mustRun(runId);
+    if ((run.state === 'failed' || run.state === 'commit-ready') && run.engine === 'playbook' && this.deps.onTerminal) {
+      try {
+        await this.deps.onTerminal(run);
+      } catch {
+        // The reflector records its own failure.
+      }
+    }
+    return this.mustRun(runId);
   }
   private mustRun(runId: string): RunRecord {
     const run = this.deps.store.getRun(runId);
