@@ -1,11 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Contract, Flow } from '../../../src/domain/types.js';
 import type { PhaseInput } from '../../../src/engine/runEngine.js';
 import { attemptDir, readStatusValue } from '../../../src/engine/playbook/runFolder.js';
-import type { ForgePort, GitPort, WorkerPort, WorkerTask } from '../../../src/engine/playbook/ports.js';
+import type { ForgePort, GitPort, ToolboxGit, WorkerPort, WorkerTask } from '../../../src/engine/playbook/ports.js';
 import type { FilesPort } from '../../../src/runs/runService.js';
 import type { SqliteRunStore } from '../../../src/store/runStore.js';
 import { runSpecPhase } from '../../../src/engine/playbook/phases/specPhase.js';
@@ -69,7 +69,7 @@ function contract(over: Partial<Contract> = {}): Contract {
   };
 }
 
-function setup(options: { git?: Partial<GitPort>; forge?: Partial<ForgePort>; flow?: Flow; contract?: Contract } = {}) {
+function setup(options: { git?: Partial<GitPort>; forge?: Partial<ForgePort>; flow?: Flow; contract?: Contract; toolboxGit?: ToolboxGit } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cf-spec-'));
   const subject = options.contract ?? contract();
   const saved: Contract[] = [];
@@ -141,6 +141,7 @@ function setup(options: { git?: Partial<GitPort>; forge?: Partial<ForgePort>; fl
       return PLAYBOOK;
     },
     squeez: { async doctor() { throw new Error('phase test must not probe'); } },
+    toolboxGit: options.toolboxGit,
     flow: options.flow ?? 'feature' as Flow,
   };
   return { root, input, ctx, saved, updates, workerRuns, created, branchChecks, defaultBranchRepos, issueReads, seen };
@@ -268,5 +269,27 @@ describe('runSpecPhase', () => {
     ]);
     expect(subject.acceptance_criteria[0]).toEqual({ id: 'ac-9', statement: 'kept', gates: ['verify'], evidence: 'x' });
     expect(output.evidence).toMatchObject([{ kind: 'brief', criterionIds: ['ac-9'], phase: 'spec', producerPhase: 'spec' }]);
+  });
+
+  it('puts toolbox text from the base SHA in the prompt and omits a working-tree-only tool', async () => {
+    const shown: string[] = [];
+    const h = setup({
+      toolboxGit: {
+        show: async (_repo, sha, path) => {
+          shown.push(`${sha}:${path}`);
+          if (sha === 'abc' && path === 'chocolate-tools/manifest.md') return '## lathe\nuse: cut from the base sha\n';
+          return null;
+        },
+        restoreTree: async () => {},
+      },
+    });
+    mkdirSync(join(h.root, 'chocolate-tools'), { recursive: true });
+    writeFileSync(join(h.root, 'chocolate-tools', 'manifest.md'), '## working-tree-only\nuse: not on the base\n');
+    await runSpecPhase(h.input, h.ctx);
+    const dir = attemptDir(h.root, 'run-1', 1);
+    expect(readStatusValue(dir, 'base')).toBe('main@abc');
+    expect(shown).toContain('abc:chocolate-tools/manifest.md');
+    expect(h.seen.prompt).toContain('cut from the base sha');
+    expect(h.seen.prompt).not.toContain('working-tree-only');
   });
 });

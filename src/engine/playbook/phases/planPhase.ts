@@ -8,6 +8,7 @@ import type { CommandResult } from '../ports.js';
 import type { PhaseContext } from './specPhase.js';
 import { porcelainEntries, revertOutside } from '../porcelain.js';
 import { appendStatus, ensureAttempt, readStatusValue } from '../runFolder.js';
+import { readToolboxText, toolboxPrompt } from '../toolbox.js';
 
 const WHERE = 'Where does the behavior live?';
 const HOW_TESTED = 'How is it tested?';
@@ -45,11 +46,12 @@ export async function runPlanPhase(input: PhaseInput, ctx: PhaseContext & { flow
 
 async function planBug(input: PhaseInput, ctx: PhaseContext, dir: string): Promise<PhaseOutput> {
   const reproPath = join(dir, 'repro.md');
+  const toolbox = toolboxPrompt(await readToolboxText(ctx.toolboxGit, ctx.repoRoot, baseSha(readStatusValue(dir, 'base'))));
   await dispatchWorker(ctx.workers, {
     role: 'default',
     runDir: dir,
     repoRoot: ctx.repoRoot,
-    prompt: [ctx.readPlaybook('plan-bug.md'), `Brief: ${join(dir, 'brief.md')}`, `Write ${reproPath}`].join('\n'),
+    prompt: [ctx.readPlaybook('plan-bug.md'), `Brief: ${join(dir, 'brief.md')}`, `Write ${reproPath}`, toolbox].filter((part) => part !== '').join('\n'),
     allowedFiles: [relative(ctx.repoRoot, reproPath)],
     unitId: 'repro',
   });
@@ -117,6 +119,7 @@ function explorePrompt(dir: string, question: string): string {
 
 async function dispatchPlan(ctx: PhaseContext, dir: string, unitId: string, problem?: string): Promise<void> {
   const planPath = join(dir, 'plan.md');
+  const toolbox = toolboxPrompt(await readToolboxText(ctx.toolboxGit, ctx.repoRoot, baseSha(readStatusValue(dir, 'base'))));
   const lines = [
     ctx.readPlaybook('plan-feature.md'),
     `Brief: ${join(dir, 'brief.md')}`,
@@ -124,6 +127,7 @@ async function dispatchPlan(ctx: PhaseContext, dir: string, unitId: string, prob
     `Write ${planPath}`,
   ];
   if (problem) lines.push(`plan check failed: ${problem}`);
+  if (toolbox) lines.push(toolbox);
   await dispatchWorker(ctx.workers, {
     role: 'default',
     runDir: dir,
@@ -132,6 +136,12 @@ async function dispatchPlan(ctx: PhaseContext, dir: string, unitId: string, prob
     allowedFiles: [relative(ctx.repoRoot, planPath)],
     unitId,
   });
+}
+
+function baseSha(value: string | null): string {
+  const at = value?.lastIndexOf('@') ?? -1;
+  if (!value || at < 0 || at === value.length - 1) return '';
+  return value.slice(at + 1);
 }
 
 function checkPlan(repoRoot: string, dir: string): string | null {

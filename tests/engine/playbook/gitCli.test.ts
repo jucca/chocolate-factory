@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -55,5 +55,66 @@ describe('GitCli', () => {
     expect(await cli.statusPorcelain(root)).toBe('');
     await cli.revert(root, []);
     await cli.deleteUntracked(root, ['missing.txt']);
+  });
+
+  it('shows a file at a revision and restores that tree', async () => {
+    const root = initRepo();
+    const cli = new GitCli();
+    const base = await cli.headSha(root);
+    expect(await cli.show(root, base, 'missing')).toBeNull();
+    expect(await cli.show(root, base, 'README')).toBe('hello\n');
+    writeFileSync(join(root, 'README'), 'dirty\n');
+    writeFileSync(join(root, 'extra.txt'), 'x\n');
+    await cli.restoreTree(root, base, 'README');
+    expect(readFileSync(join(root, 'README'), 'utf8')).toBe('hello\n');
+    expect(await cli.statusPorcelain(root)).not.toContain('README');
+  });
+
+  it('removes a toolbox committed after an empty base', async () => {
+    const root = initRepo();
+    const cli = new GitCli();
+    const base = await cli.headSha(root);
+    const tool = join(root, 'chocolate-tools', 'widget');
+    mkdirSync(tool, { recursive: true });
+    writeFileSync(join(tool, 'tool.txt'), 'new\n');
+    git(root, ['add', 'chocolate-tools']);
+    git(root, ['commit', '-m', 'add tool']);
+    await cli.restoreTree(root, base, 'chocolate-tools');
+    expect(existsSync(join(root, 'chocolate-tools'))).toBe(false);
+  });
+
+  it('restores the old tool and removes the swapped-in tool', async () => {
+    const root = initRepo();
+    const cli = new GitCli();
+    mkdirSync(join(root, 'chocolate-tools', 'old'), { recursive: true });
+    writeFileSync(join(root, 'chocolate-tools', 'old', 'tool.txt'), 'old\n');
+    git(root, ['add', 'chocolate-tools']);
+    git(root, ['commit', '-m', 'old tool']);
+    const base = await cli.headSha(root);
+    git(root, ['rm', '-r', 'chocolate-tools/old']);
+    mkdirSync(join(root, 'chocolate-tools', 'new'), { recursive: true });
+    writeFileSync(join(root, 'chocolate-tools', 'new', 'tool.txt'), 'new\n');
+    git(root, ['add', 'chocolate-tools']);
+    git(root, ['commit', '-m', 'swap tool']);
+    await cli.restoreTree(root, base, 'chocolate-tools');
+    expect(readFileSync(join(root, 'chocolate-tools', 'old', 'tool.txt'), 'utf8')).toBe('old\n');
+    expect(existsSync(join(root, 'chocolate-tools', 'new'))).toBe(false);
+  });
+
+  it('removes an untracked directory listed by porcelain', async () => {
+    const root = initRepo();
+    const cli = new GitCli();
+    mkdirSync(join(root, 'chocolate-tools', 'keep'), { recursive: true });
+    writeFileSync(join(root, 'chocolate-tools', 'keep', 'tool.txt'), 'keep\n');
+    git(root, ['add', 'chocolate-tools']);
+    git(root, ['commit', '-m', 'keep']);
+    mkdirSync(join(root, 'chocolate-tools', 'extra'), { recursive: true });
+    writeFileSync(join(root, 'chocolate-tools', 'extra', 'note.txt'), 'x\n');
+    const porcelain = await cli.statusPorcelain(root);
+    expect(porcelain).toContain('?? chocolate-tools/extra/');
+    await expect(cli.deleteUntracked(root, ['chocolate-tools/extra/'])).resolves.toBeUndefined();
+    expect(existsSync(join(root, 'chocolate-tools', 'extra'))).toBe(false);
+    expect(existsSync(join(root, 'chocolate-tools', 'keep', 'tool.txt'))).toBe(true);
+    expect(await cli.statusPorcelain(root)).toBe('');
   });
 });

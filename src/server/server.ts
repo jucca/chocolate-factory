@@ -1,5 +1,4 @@
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { buildApp } from './app.js';
 import { SqliteRunStore } from '../store/runStore.js';
@@ -15,10 +14,9 @@ import { PlaybookRunEngine } from '../engine/playbook/playbookEngine.js';
 import { ProcessSqueezDoctor } from '../engine/playbook/processSqueezDoctor.js';
 import { DispatchRunEngine } from '../engine/playbook/dispatchEngine.js';
 import { RunWalker } from '../engine/playbook/walker.js';
-
-function readPlaybook(name: string): string {
-  return readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'engine', 'playbooks', name), 'utf8');
-}
+import { makeReflector } from '../engine/playbook/reflect.js';
+import { createPlaybookPublisher } from '../engine/playbook/playbookPublisher.js';
+import { factoryRoot, loadPlaybookSnapshot, playbookDir } from '../engine/playbook/playbookSnapshot.js';
 
 export async function startServer(repoRoot: string): Promise<void> {
   const data = loadChocolate(repoRoot);
@@ -29,23 +27,42 @@ export async function startServer(repoRoot: string): Promise<void> {
     readContractFile: (id) => readFileSync(join(repoRoot, '.chocolate', 'contracts', `${id}.yaml`), 'utf8'),
     saveContract: (c) => saveContract(repoRoot, c),
   };
+  const git = new GitCli();
+  const workers = new ProcessWorker({
+    default: config.workers.default.command,
+    implement: config.workers.implement.command,
+  });
+  const snapshot = loadPlaybookSnapshot(playbookDir());
   const playbook = new PlaybookRunEngine({
     repoRoot,
     files,
     store,
-    git: new GitCli(),
+    git,
     forge: new ForgeCli({ runGh: defaultGhRunner }),
-    workers: new ProcessWorker({
-      default: config.workers.default.command,
-      implement: config.workers.implement.command,
-    }),
+    workers,
     commands: new ShellCommandRunner(),
     ci: { waitMs: 60 * 60 * 1000, extraIntervalMs: 30_000 },
-    readPlaybook,
+    readPlaybook: () => '',
     squeez: new ProcessSqueezDoctor(),
+    toolboxGit: git,
   });
   const engine = new DispatchRunEngine({ store, simulator: new SimulatorRunEngine(), playbook });
-  const runService = new RunService({ store, engine, files, config, repoRoot });
+  const runService = new RunService({
+    store,
+    engine,
+    files,
+    config,
+    repoRoot,
+    onTerminal: makeReflector({
+      workers,
+      publisher: createPlaybookPublisher(),
+      snapshot,
+      factoryRoot: factoryRoot(),
+      isRepo: (root) => git.isRepo(root),
+      repoRoot,
+      git,
+    }),
+  });
   const walker = new RunWalker(runService);
   const issueSource = new GithubIssueSource({ repo: config.issue_source.repo, runGh: defaultGhRunner });
   const app = buildApp({ repoRoot, store, runService, issueSource, config, walker });

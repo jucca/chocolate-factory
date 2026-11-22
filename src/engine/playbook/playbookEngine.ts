@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Flow } from '../../domain/types.js';
 import type { PhaseInput, PhaseOutput, RunEngine } from '../runEngine.js';
 import { runCommitPhase } from './phases/commitPhase.js';
@@ -9,15 +6,20 @@ import { runPlanPhase } from './phases/planPhase.js';
 import { runSpecPhase, type PhaseContext } from './phases/specPhase.js';
 import { runTestPhase } from './phases/testPhase.js';
 import { runVerifyPhase } from './phases/verifyPhase.js';
+import { loadPlaybookSnapshot, playbookDir } from './playbookSnapshot.js';
 import { recordSqueezDoctor } from './recordSqueezDoctor.js';
 import { ensureAttempt } from './runFolder.js';
 
-function readPlaybook(name: string): string {
-  return readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'playbooks', name), 'utf8');
-}
-
 export class PlaybookRunEngine implements RunEngine {
-  constructor(private ctx: PhaseContext) {}
+  private snapshot: Record<string, string>;
+
+  constructor(private ctx: PhaseContext, options?: { playbookDirectory?: string }) {
+    this.snapshot = loadPlaybookSnapshot(options?.playbookDirectory ?? playbookDir());
+  }
+
+  playbook(name: string): string {
+    return this.snapshot[name] ?? '';
+  }
 
   async runPhase(input: PhaseInput): Promise<PhaseOutput> {
     const run = this.ctx.store.getRun(input.runId);
@@ -25,6 +27,7 @@ export class PlaybookRunEngine implements RunEngine {
     const dir = ensureAttempt(this.ctx.repoRoot, input.runId, input.attempt);
     await recordSqueezDoctor(dir, this.ctx.squeez);
     const flow: Flow = run.flow;
+    const readPlaybook = (name: string) => this.playbook(name);
     const ctx = { ...this.ctx, flow, readPlaybook };
     switch (input.phase) {
       case 'spec':

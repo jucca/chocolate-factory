@@ -31,6 +31,11 @@ export interface CommandRunner {
   run(repoRoot: string, command: string): Promise<CommandResult>;
 }
 
+export interface ToolboxGit {
+  show(repoRoot: string, rev: string, path: string): Promise<string | null>;
+  restoreTree(repoRoot: string, rev: string, path: string): Promise<void>;
+}
+
 export interface GitPort {
   isRepo(repoRoot: string): Promise<boolean>;
   statusPorcelain(repoRoot: string): Promise<string>;

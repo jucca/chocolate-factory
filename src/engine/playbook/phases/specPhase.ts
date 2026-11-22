@@ -2,9 +2,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { Contract, Flow, GateId } from '../../../domain/types.js';
 import type { PhaseInput, PhaseOutput } from '../../runEngine.js';
-import type { CommandRunner, ForgePort, GitPort, SqueezDoctor, WorkerPort } from '../ports.js';
+import type { CommandRunner, ForgePort, GitPort, SqueezDoctor, ToolboxGit, WorkerPort } from '../ports.js';
 import { dispatchWorker } from '../dispatchWorker.js';
 import { appendStatus, ensureAttempt } from '../runFolder.js';
+import { readToolboxText, toolboxPrompt } from '../toolbox.js';
 import type { FilesPort } from '../../../runs/runService.js';
 import type { SqliteRunStore } from '../../../store/runStore.js';
 
@@ -19,6 +20,7 @@ export interface PhaseContext {
   ci: { waitMs: number; extraIntervalMs: number };
   readPlaybook: (name: string) => string;
   squeez: SqueezDoctor;
+  toolboxGit?: ToolboxGit;
 }
 
 function requirementBullets(markdown: string): string[] {
@@ -65,7 +67,9 @@ export async function runSpecPhase(input: PhaseInput, ctx: PhaseContext & { flow
   const briefPath = join(dir, 'brief.md');
   writeFileSync(intakePath, JSON.stringify({ title: intake.title, body: intake.body, comments: intake.comments }));
 
-  const prompt = [ctx.readPlaybook('spec.md'), intakePath, briefPath, `type: ${ctx.flow}`].join('\n');
+  const toolboxSha = await ctx.git.headSha(repoRoot);
+  const toolbox = toolboxPrompt(await readToolboxText(ctx.toolboxGit, repoRoot, toolboxSha));
+  const prompt = [ctx.readPlaybook('spec.md'), intakePath, briefPath, `type: ${ctx.flow}`, toolbox].filter((part) => part !== '').join('\n');
   writeFileSync(join(dir, 'prompt.md'), prompt);
   await dispatchWorker(ctx.workers, {
     role: 'default',
