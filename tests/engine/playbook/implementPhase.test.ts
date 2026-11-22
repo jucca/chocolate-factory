@@ -555,6 +555,26 @@ describe('runImplementPhase', () => {
     expect(h.workerRuns[0].prompt).toContain('Toolbox rule:');
   });
 
+  it('keeps an allowed chocolate-tools file when toolboxGit is absent', async () => {
+    let reads = 0;
+    const h = setup({
+      plan: plan([
+        { id: 'U1', files: 'chocolate-tools/widget/a.js', verify: 'pnpm test a' },
+        { id: 'U2', files: 'src/b.ts', verify: 'pnpm test b' },
+      ]),
+      git: {
+        statusPorcelain: async () => {
+          reads += 1;
+          return reads === 1 ? '' : '?? chocolate-tools/widget/a.js\n';
+        },
+      },
+    });
+    await runImplementPhase(h.input, h.ctx);
+    expect(h.ctx.toolboxGit).toBeUndefined();
+    expect(h.reverts.flat()).not.toContain('chocolate-tools/widget/a.js');
+    expect(h.deletes.flat()).not.toContain('chocolate-tools/widget/a.js');
+  });
+
   it('reverts an in-place toolbox edit when no directory was added', async () => {
     let reads = 0;
     const h = setup({

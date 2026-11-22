@@ -51,7 +51,7 @@ export async function runImplementPhase(input: PhaseInput, ctx: PhaseContext & {
     const waveRows = await Promise.all(wave.map((unit) => runUnit(
       ctx, dir, planPath, playbook, unit, waveAllowed, reproPath, base, toolboxRule,
     )));
-    await revertIllegalToolbox(ctx, dir);
+    if (ctx.toolboxGit) await revertIllegalToolbox(ctx, dir);
     for (const row of waveRows) {
       if (row.fallback !== '-') appendStatus(dir, `- fallback: ${row.fallback}`);
     }
@@ -196,8 +196,10 @@ async function guardScope(
   const entries = porcelainEntries(porcelain);
   const hold = new Set<string>();
   if (reproPath) hold.add(reproPath);
-  for (const entry of entries) {
-    if (isToolboxPath(entry.path)) hold.add(entry.path);
+  if (ctx.toolboxGit) {
+    for (const entry of entries) {
+      if (isToolboxPath(entry.path)) hold.add(entry.path);
+    }
   }
   await revertOutside(ctx.git, repoRoot, porcelain, allowed, hold);
   if (!reproPath) return;
