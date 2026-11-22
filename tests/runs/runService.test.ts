@@ -254,4 +254,69 @@ describe('RunService', () => {
     expect(simFailed.state).toBe('failed');
     expect(seen).toEqual(['failed']);
   });
+
+  it('calls onTerminal once when the commit gate is approved and keeps commit-ready if it throws', async () => {
+    const seen: string[] = [];
+    const config = { ...DEFAULT_CONFIG, workers: { default: { command: ['node'] }, implement: { command: ['node'] } } };
+    const files = {
+      load: () => ({
+        contracts: [contract],
+        invalidContracts: [],
+        roadmap: { milestones: [{ id: 'm1', title: 'M1', intent: 'x', contracts: ['feat-a'] }] },
+        roadmapError: null,
+        config,
+        crossRefErrors: [],
+      }),
+      readContractFile: () => 'rev',
+      saveContract: () => 'rev2',
+    };
+    const engine = { runPhase: async () => { throw new Error('unused'); } };
+    const playbook = new RunService({
+      store,
+      engine,
+      files,
+      config,
+      repoRoot: root,
+      onTerminal: async (run) => { seen.push(run.state); },
+    });
+    const run = playbook.claim({ issue: null, contract, contractRevision: 'rev1', engine: 'playbook' });
+    store.updateRunState(run.id, { phase: 'commit', state: 'awaiting-decision' });
+    store.appendEvidence({
+      runId: run.id,
+      attempt: 1,
+      phase: 'verify',
+      producerPhase: 'verify',
+      criterionIds: ['ac-1'],
+      kind: 'verification-check',
+      summary: 'ok',
+      createdAt: new Date().toISOString(),
+    });
+    const ready = await playbook.actOnGate(run.id, { gate: 'commit', action: 'approve' });
+    expect(ready.state).toBe('commit-ready');
+    expect(seen).toEqual(['commit-ready']);
+
+    const throwing = new RunService({
+      store,
+      engine,
+      files,
+      config,
+      repoRoot: root,
+      onTerminal: async () => { throw new Error('reflect down'); },
+    });
+    const run2 = throwing.claim({ issue: null, contract, contractRevision: 'rev1', engine: 'playbook' });
+    store.updateRunState(run2.id, { phase: 'commit', state: 'awaiting-decision' });
+    store.appendEvidence({
+      runId: run2.id,
+      attempt: 1,
+      phase: 'verify',
+      producerPhase: 'verify',
+      criterionIds: ['ac-1'],
+      kind: 'verification-check',
+      summary: 'ok',
+      createdAt: new Date().toISOString(),
+    });
+    const still = await throwing.actOnGate(run2.id, { gate: 'commit', action: 'approve' });
+    expect(still.state).toBe('commit-ready');
+    expect(seen).toEqual(['commit-ready']);
+  });
 });

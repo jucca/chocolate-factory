@@ -58,6 +58,7 @@ export async function startServer(repoRoot: string): Promise<void> {
       factoryRoot: factoryRoot(),
       isRepo: (root) => git.isRepo(root),
       repoRoot,
+      git,
     }),
   });
   const walker = new RunWalker(runService);

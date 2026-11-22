@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, unlinkSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { GitPort } from './ports.js';
 
@@ -104,7 +104,7 @@ export class GitCli implements GitPort {
   async deleteUntracked(repoRoot: string, paths: string[]): Promise<void> {
     for (const path of paths) {
       const abs = isAbsolute(path) ? path : join(repoRoot, path);
-      if (existsSync(abs)) unlinkSync(abs);
+      rmSync(abs, { recursive: true, force: true });
     }
   }
 
@@ -117,15 +117,9 @@ export class GitCli implements GitPort {
   }
 
   async restoreTree(repoRoot: string, rev: string, path: string): Promise<void> {
-    try {
-      await git(repoRoot, ['checkout', rev, '--', path]);
-    } catch {
-      // The path is absent at that revision.
-    }
-    try {
-      await git(repoRoot, ['clean', '-fd', '--', path]);
-    } catch {
-      // Nothing untracked under that path.
-    }
+    await git(repoRoot, ['rm', '-rf', '--ignore-unmatch', '--', path]);
+    const listed = await git(repoRoot, ['ls-tree', '--name-only', rev, '--', path]);
+    if (listed.trim() !== '') await git(repoRoot, ['checkout', rev, '--', path]);
+    await git(repoRoot, ['clean', '-fd', '--', path]);
   }
 }

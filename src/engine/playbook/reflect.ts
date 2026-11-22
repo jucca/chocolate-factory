@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { RunRecord } from '../../domain/types.js';
 import { PLAYBOOK_FILES } from './playbookSnapshot.js';
-import type { WorkerPort } from './ports.js';
+import { porcelainEntries } from './porcelain.js';
+import type { GitPort, WorkerPort } from './ports.js';
 import { appendStatus, attemptDir } from './runFolder.js';
 
 export interface PlaybookPublisher {
@@ -65,15 +66,62 @@ function existingArtifacts(dir: string): string[] {
   return names;
 }
 
-function buildPrompt(dir: string): string {
+function buildPrompt(dir: string, snapshot: Readonly<Record<string, string>>): string {
   const blocks: string[] = [];
   for (const name of existingArtifacts(dir)) {
-    blocks.push(`${name}\n${readFileSync(join(dir, name), 'utf8')}`);
+    const path = join(dir, name);
+    blocks.push(`${path}\n${readFileSync(path, 'utf8')}`);
   }
-  blocks.push(
-    `Write reflect.md with REASON: and DROP:. Write changed playbooks under reflect-playbooks/ using ${PLAYBOOK_FILES.join(', ')}.`,
-  );
+  const reflectPath = join(dir, 'reflect.md');
+  const proposedDir = join(dir, 'reflect-playbooks');
+  blocks.push(`Write the whole file ${reflectPath} with REASON: and DROP:.`);
+  blocks.push(`Write the whole file for each changed playbook under ${proposedDir}. Use only ${PLAYBOOK_FILES.join(', ')}.`);
+  for (const name of PLAYBOOK_FILES) {
+    blocks.push(`Current ${name}\n${snapshot[name] ?? ''}`);
+  }
   return blocks.join('\n');
+}
+
+function slash(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function coversAttempt(path: string, attemptRel: string): boolean {
+  const file = slash(path);
+  const attempt = slash(attemptRel);
+  if (file === '' || attempt === '') return false;
+  return file === attempt || file.startsWith(`${attempt}/`) || attempt.startsWith(`${file}/`);
+}
+
+function porcelainKey(entry: { path: string; untracked: boolean }): string {
+  return `${entry.untracked ? 'u' : 't'}:${entry.path}`;
+}
+
+async function revertProductCheckout(
+  git: Pick<GitPort, 'statusPorcelain' | 'revert' | 'deleteUntracked'>,
+  repoRoot: string,
+  dir: string,
+  before: ReadonlySet<string>,
+): Promise<void> {
+  const porcelain = await git.statusPorcelain(repoRoot);
+  const attemptRel = relative(repoRoot, dir);
+  const tracked: string[] = [];
+  const untracked: string[] = [];
+  const seenTracked = new Set<string>();
+  const seenUntracked = new Set<string>();
+  for (const entry of porcelainEntries(porcelain)) {
+    if (coversAttempt(entry.path, attemptRel) || before.has(porcelainKey(entry))) continue;
+    if (entry.untracked) {
+      if (seenUntracked.has(entry.path)) continue;
+      seenUntracked.add(entry.path);
+      untracked.push(entry.path);
+    } else if (!seenTracked.has(entry.path)) {
+      seenTracked.add(entry.path);
+      tracked.push(entry.path);
+    }
+  }
+  if (tracked.length > 0) await git.revert(repoRoot, tracked);
+  if (untracked.length > 0) await git.deleteUntracked(repoRoot, untracked);
 }
 
 function parseReason(markdown: string): string {
@@ -106,6 +154,7 @@ export function makeReflector(deps: {
   factoryRoot: string;
   repoRoot: string;
   isRepo: (root: string) => Promise<boolean>;
+  git: Pick<GitPort, 'statusPorcelain' | 'revert' | 'deleteUntracked'>;
 }): (run: RunRecord) => Promise<void> {
   return async (run: RunRecord) => {
     if (run.engine !== 'playbook') return;
@@ -120,15 +169,18 @@ export function makeReflector(deps: {
       appendStatus(dir, '- reflect: skipped');
       return;
     }
+    let before = new Set<string>();
     try {
+      before = new Set(porcelainEntries(await deps.git.statusPorcelain(deps.repoRoot)).map(porcelainKey));
       const report = await deps.workers.run({
         role: 'default',
         runDir: dir,
         repoRoot: deps.repoRoot,
-        prompt: buildPrompt(dir),
+        prompt: buildPrompt(dir, deps.snapshot),
         allowedFiles: ['reflect.md'],
         unitId: 'reflect',
       });
+      await revertProductCheckout(deps.git, deps.repoRoot, dir, before);
       if (report.status !== 'done') {
         appendStatus(dir, `- reflect: discarded worker-${report.status}`);
         return;
@@ -148,6 +200,11 @@ export function makeReflector(deps: {
       });
       appendStatus(dir, `- reflect: pr ${url}`);
     } catch (error) {
+      try {
+        await revertProductCheckout(deps.git, deps.repoRoot, dir, before);
+      } catch {
+        // The original failure is the one status.md records.
+      }
       appendStatus(dir, `- reflect: discarded ${discardMessage(error)}`);
     }
   };

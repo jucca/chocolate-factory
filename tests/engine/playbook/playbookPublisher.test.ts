@@ -28,9 +28,10 @@ function initFactory(): { root: string; bare: string } {
   git(bare, ['init', '--bare', '-b', 'main']);
   git(root, ['remote', 'add', 'origin', bare]);
   git(root, ['push', '-u', 'origin', 'main']);
-  expect(git(root, ['branch', '--show-current']).trim()).toBe('main');
-  return { root, bare };
-}
+    expect(git(root, ['branch', '--show-current']).trim()).toBe('main');
+    git(root, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+    return { root, bare };
+  }
 
 describe('createPlaybookPublisher', () => {
   it('opens a playbook pull request from a worktree and refuses a second branch', async () => {
@@ -42,6 +43,10 @@ describe('createPlaybookPublisher', () => {
         return 'https://example.test/pr/9\n';
       },
     });
+    writeFileSync(join(root, 'local-only.txt'), 'unpushed\n');
+    git(root, ['add', 'local-only.txt']);
+    git(root, ['commit', '-m', 'local only']);
+    const local = git(root, ['rev-parse', 'HEAD']).trim();
     const input = { files: { 'spec.md': 'b\n' }, body: 'tighten', runId: 'run-1', factoryRoot: root };
     const url = await publisher.publish(input);
     expect(url).toBe('https://example.test/pr/9');
@@ -51,6 +56,28 @@ describe('createPlaybookPublisher', () => {
     expect(git(root, ['branch', '--show-current']).trim()).toBe('main');
     expect(existsSync(join(root, '.chocolate', 'runtime', 'worktrees', 'playbook-run-1'))).toBe(false);
     expect(git(bare, ['show', 'playbook/run-1:src/engine/playbooks/spec.md'])).toBe('b\n');
+    expect(git(bare, ['rev-parse', 'playbook/run-1^']).trim()).toBe(git(bare, ['rev-parse', 'main']).trim());
+    expect(git(bare, ['rev-parse', 'playbook/run-1^']).trim()).not.toBe(local);
+    expect(() => git(bare, ['cat-file', '-e', 'playbook/run-1:local-only.txt'])).toThrow();
     await expect(publisher.publish(input)).rejects.toThrow(/^publish-branch-exists/);
+  });
+
+  it('removes the worktree when publish fails after the worktree is added', async () => {
+    const { root } = initFactory();
+    let called = false;
+    const publisher = createPlaybookPublisher({
+      runGh: async () => {
+        called = true;
+        throw new Error('gh down');
+      },
+    });
+    await expect(publisher.publish({
+      files: { 'spec.md': 'b\n' },
+      body: 'tighten',
+      runId: 'run-fail',
+      factoryRoot: root,
+    })).rejects.toThrow(/^publish-/);
+    expect(called).toBe(true);
+    expect(existsSync(join(root, '.chocolate', 'runtime', 'worktrees', 'playbook-run-fail'))).toBe(false);
   });
 });

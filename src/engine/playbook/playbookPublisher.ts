@@ -29,6 +29,23 @@ function wrapPublishError(error: unknown): Error {
   return new Error(message.startsWith('publish-') ? message : `publish-${message}`);
 }
 
+async function resolveBase(factoryRoot: string): Promise<string> {
+  let name = 'main';
+  try {
+    const symbolic = (await git(factoryRoot, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])).trim();
+    if (symbolic !== '') name = symbolic.startsWith('origin/') ? symbolic.slice('origin/'.length) : symbolic;
+  } catch {
+    name = 'main';
+  }
+  const remote = `origin/${name}`;
+  try {
+    await git(factoryRoot, ['rev-parse', '--verify', '--quiet', remote]);
+    return remote;
+  } catch {
+    return 'main';
+  }
+}
+
 export function createPlaybookPublisher(options?: {
   runGh?: (args: string[], cwd: string) => Promise<string>;
 }): PlaybookPublisher {
@@ -44,13 +61,7 @@ export function createPlaybookPublisher(options?: {
           () => false,
         );
         if (exists) throw new Error('publish-branch-exists');
-        let base = 'main';
-        try {
-          const name = (await git(input.factoryRoot, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])).trim();
-          base = name.startsWith('origin/') ? name.slice('origin/'.length) : name;
-        } catch {
-          base = 'main';
-        }
+        const base = await resolveBase(input.factoryRoot);
         mkdirSync(dirname(worktree), { recursive: true });
         await git(input.factoryRoot, ['worktree', 'add', '-b', branch, worktree, base]);
         added = true;
