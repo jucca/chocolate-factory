@@ -11,27 +11,28 @@ Stampable, local rehearsal software factory. V1 ships a stamp CLI, contract/road
 
 ## 1. Restore on the laptop (full guide: local env setup)
 
-From a git bundle:
-
-```bash
-git clone /path/to/chocolate-factory-v1.bundle chocolate-factory
-cd chocolate-factory
-git checkout feat/chocolate-factory-v1
-pnpm install
-pnpm test
-```
-
-Bundle path: `chocolate-factory-v1.bundle`.
-
-Or clone the GitHub remote (still check out the feature branch — `main` is an empty PR base):
+The latest factory is the `main` branch. A fresh clone checks that branch out already. Stay on `main`. `feat/chocolate-factory-v1` is the November 2026 v1 snapshot and is behind `main`.
 
 ```bash
 git clone https://github.com/jucca/chocolate-factory.git chocolate-factory
 cd chocolate-factory
-git checkout feat/chocolate-factory-v1
+git switch main
+git pull
 pnpm install
 pnpm test
 ```
+
+If this checkout is already on `feat/chocolate-factory-v1`, switch before installing:
+
+```bash
+git fetch origin
+git switch main
+git pull
+pnpm install
+pnpm test
+```
+
+A git bundle is a snapshot from the day it was made. Clone from GitHub and stay on `main` when you want the current factory.
 
 This repo is already stamped (`.chocolate/` is present). Serve it as the factory root with `.` in the commands below.
 
