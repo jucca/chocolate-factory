@@ -51,6 +51,7 @@ export async function runImplementPhase(input: PhaseInput, ctx: PhaseContext & {
     const waveRows = await Promise.all(wave.map((unit) => runUnit(
       ctx, dir, planPath, playbook, unit, waveAllowed, reproPath, base, toolboxRule,
     )));
+    await revertIllegalToolbox(ctx, dir);
     for (const row of waveRows) {
       if (row.fallback !== '-') appendStatus(dir, `- fallback: ${row.fallback}`);
     }
@@ -92,11 +93,11 @@ async function runUnit(
   toolboxRule: string,
 ): Promise<UnitRow> {
   let report = await dispatchUnit(ctx, dir, planPath, playbook, unit, toolboxRule);
-  await guardScope(ctx, dir, waveAllowed, reproPath, base);
+  await guardScope(ctx, waveAllowed, reproPath, base);
   let command = await ctx.commands.run(ctx.repoRoot, unit.verify);
   if (needsAnotherPass(report, command)) {
     report = await dispatchUnit(ctx, dir, planPath, playbook, unit, toolboxRule);
-    await guardScope(ctx, dir, waveAllowed, reproPath, base);
+    await guardScope(ctx, waveAllowed, reproPath, base);
     command = await ctx.commands.run(ctx.repoRoot, unit.verify);
     if (needsAnotherPass(report, command)) return toRow(unit.id, 'blocked', report);
   }
@@ -158,9 +159,34 @@ async function legalToolboxHold(ctx: PhaseContext, dir: string, porcelain: strin
   return toolboxHoldPaths(porcelain, accept);
 }
 
+async function revertIllegalToolbox(ctx: PhaseContext, dir: string): Promise<void> {
+  const porcelain = await ctx.git.statusPorcelain(ctx.repoRoot);
+  const hold = new Set(await legalToolboxHold(ctx, dir, porcelain));
+  const tracked: string[] = [];
+  const untracked: string[] = [];
+  const seenTracked = new Set<string>();
+  const seenUntracked = new Set<string>();
+  for (const entry of porcelainEntries(porcelain)) {
+    if (!isToolboxPath(entry.path) || hold.has(entry.path)) continue;
+    if (entry.untracked) {
+      if (seenUntracked.has(entry.path)) continue;
+      seenUntracked.add(entry.path);
+      untracked.push(entry.path);
+    } else if (!seenTracked.has(entry.path)) {
+      seenTracked.add(entry.path);
+      tracked.push(entry.path);
+    }
+  }
+  if (tracked.length > 0) await ctx.git.revert(ctx.repoRoot, tracked);
+  if (untracked.length > 0) await ctx.git.deleteUntracked(ctx.repoRoot, untracked);
+}
+
+function isToolboxPath(path: string): boolean {
+  return path === TOOLBOX_DIR || path.startsWith(`${TOOLBOX_DIR}/`);
+}
+
 async function guardScope(
   ctx: PhaseContext,
-  dir: string,
   allowed: ReadonlySet<string>,
   reproPath: string | null,
   base: string,
@@ -170,8 +196,9 @@ async function guardScope(
   const entries = porcelainEntries(porcelain);
   const hold = new Set<string>();
   if (reproPath) hold.add(reproPath);
-  const extra = await legalToolboxHold(ctx, dir, porcelain);
-  for (const path of extra) hold.add(path);
+  for (const entry of entries) {
+    if (isToolboxPath(entry.path)) hold.add(entry.path);
+  }
   await revertOutside(ctx.git, repoRoot, porcelain, allowed, hold);
   if (!reproPath) return;
   const names = await ctx.git.diffNames(repoRoot, base, reproPath);
