@@ -1,8 +1,26 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runCursorWorker, type CursorWorkerSpawn } from '../../../src/engine/playbook/cursorWorker.js';
+
+function execFileAsync(bin: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number | null; stderr: string }> {
+  return new Promise((resolvePromise, reject) => {
+    execFile(bin, args, { env }, (err, _stdout, stderr) => {
+      if (err && typeof (err as NodeJS.ErrnoException & { code?: string | number }).code === 'number') {
+        const exit = err as NodeJS.ErrnoException & { code: number };
+        resolvePromise({ code: exit.code, stderr: String(stderr) });
+        return;
+      }
+      if (err && (err as NodeJS.ErrnoException).code && typeof (err as NodeJS.ErrnoException).code !== 'number') {
+        reject(err);
+        return;
+      }
+      resolvePromise({ code: 0, stderr: String(stderr) });
+    });
+  });
+}
 
 function layout() {
   const cwd = mkdtempSync(join(tmpdir(), 'cf-cursor-'));
@@ -185,4 +203,24 @@ describe('runCursorWorker', () => {
     await runCursorWorker({ argv: [promptPath], env: env(repo, runDir), cwd, spawnAgent });
     expect(readFileSync(join(runDir, 'worker-report.md'), 'utf8')).toBe('STATUS: blocked\nagent exited null\n');
   });
+
+  it('the bin writes STATUS done when the fake agent exits 0', async () => {
+    const { cwd, repo, runDir, promptPath } = layout();
+    const fake = join(cwd, 'fake-agent.mjs');
+    writeFileSync(fake, `#!${process.execPath}\nprocess.exit(0)\n`);
+    chmodSync(fake, 0o755);
+    const root = process.cwd();
+    const result = await execFileAsync(process.execPath, [
+      join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      join(root, 'bin', 'chocolate-cursor-worker.ts'),
+      promptPath,
+    ], {
+      ...process.env,
+      CHOCOLATE_REPO: repo,
+      CHOCOLATE_RUN_DIR: runDir,
+      CHOCOLATE_AGENT_BIN: fake,
+    });
+    expect(result.code).toBe(0);
+    expect(readFileSync(join(runDir, 'worker-report.md'), 'utf8')).toBe('STATUS: done\n');
+  }, 20000);
 });

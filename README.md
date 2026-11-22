@@ -111,3 +111,27 @@ A claim can choose feature or bug, and simulator or playbook. Simulator stays th
 Commit-ready requires an open, non-draft pull request and green CI. The server does not merge.
 
 Worker commands live under `workers.default.command` and `workers.implement.command` in `.chocolate/config.yaml`. Empty commands reject a playbook claim.
+
+A playbook run launches the Cursor CLI through `bin/chocolate-cursor-worker.ts`. Run `agent login` once on the machine. Paste both command lists yourself. The factory appends the prompt path and does not merge. Paths point at this factory checkout, because the command's working directory is the target repo:
+
+```yaml
+workers:
+  default:
+    command:
+      - pnpm
+      - --dir
+      - /absolute/path/to/chocolate-factory
+      - exec
+      - tsx
+      - bin/chocolate-cursor-worker.ts
+  implement:
+    command:
+      - pnpm
+      - --dir
+      - /absolute/path/to/chocolate-factory
+      - exec
+      - tsx
+      - bin/chocolate-cursor-worker.ts
+```
+
+An optional `--model` flag is an extra entry after `bin/chocolate-cursor-worker.ts`. The sample does not include one.
