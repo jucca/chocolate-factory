@@ -50,17 +50,23 @@ export async function runCursorWorker(input: {
 
   const agentBin = input.env.CHOCOLATE_AGENT_BIN || 'agent';
   const forwarded = input.argv.slice(0, -1);
-  const result = await input.spawnAgent({
-    bin: agentBin,
-    cwd: repo,
-    env: input.env,
-    args: [
-      ...forwarded,
-      '-p', '--force', '--trust', '--sandbox', 'disabled', '--output-format', 'text',
-      '--workspace', repo,
-      promptText,
-    ],
-  });
+  let result: { code: number | null; error: NodeJS.ErrnoException | null };
+  try {
+    result = await input.spawnAgent({
+      bin: agentBin,
+      cwd: repo,
+      env: input.env,
+      args: [
+        ...forwarded,
+        '-p', '--force', '--trust', '--sandbox', 'disabled', '--output-format', 'text',
+        '--workspace', repo,
+        promptText,
+      ],
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    result = { code: null, error };
+  }
 
   if (existsReport(reportPath)) return 0;
 

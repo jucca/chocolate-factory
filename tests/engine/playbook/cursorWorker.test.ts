@@ -204,6 +204,46 @@ describe('runCursorWorker', () => {
     expect(readFileSync(join(runDir, 'worker-report.md'), 'utf8')).toBe('STATUS: blocked\nagent exited null\n');
   });
 
+  it('writes blocked and returns 0 when spawnAgent throws', async () => {
+    const { cwd, repo, runDir, promptPath } = layout();
+    const spawnAgent: CursorWorkerSpawn = async () => {
+      throw new Error('spawn E2BIG');
+    };
+    const code = await runCursorWorker({ argv: [promptPath], env: env(repo, runDir), cwd, spawnAgent });
+    expect(code).toBe(0);
+    expect(readFileSync(join(runDir, 'worker-report.md'), 'utf8')).toBe('STATUS: blocked\nagent spawn failed: spawn E2BIG\n');
+  });
+
+  it('keeps a STATUS blocked line the agent wrote after a non-zero exit', async () => {
+    const { cwd, repo, runDir, promptPath } = layout();
+    const report = 'STATUS: blocked\nstill open\n';
+    const spawnAgent: CursorWorkerSpawn = async () => {
+      writeFileSync(join(runDir, 'worker-report.md'), report);
+      return { code: 1, error: null };
+    };
+    const code = await runCursorWorker({ argv: [promptPath], env: env(repo, runDir), cwd, spawnAgent });
+    expect(code).toBe(0);
+    expect(readFileSync(join(runDir, 'worker-report.md'), 'utf8')).toBe(report);
+  });
+
+  it('resolves a relative prompt path and CHOCOLATE_RUN_DIR against cwd', async () => {
+    const { cwd } = layout();
+    let childCwd = '';
+    const spawnAgent: CursorWorkerSpawn = async (input) => {
+      childCwd = input.cwd;
+      return { code: 0, error: null };
+    };
+    const code = await runCursorWorker({
+      argv: ['repo/attempt/prompt.md'],
+      env: env('repo', 'repo/attempt'),
+      cwd,
+      spawnAgent,
+    });
+    expect(code).toBe(0);
+    expect(childCwd).toBe(resolve(cwd, 'repo'));
+    expect(readFileSync(join(cwd, 'repo', 'attempt', 'worker-report.md'), 'utf8')).toBe('STATUS: done\n');
+  });
+
   it('the bin writes STATUS done when the fake agent exits 0', async () => {
     const { cwd, repo, runDir, promptPath } = layout();
     const fake = join(cwd, 'fake-agent.mjs');

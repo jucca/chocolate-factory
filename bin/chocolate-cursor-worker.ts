@@ -8,14 +8,19 @@ const spawnAgent: CursorWorkerSpawn = (input) => new Promise((resolvePromise) =>
     settled = true;
     resolvePromise(value);
   };
-  const child = spawn(input.bin, input.args, {
-    cwd: input.cwd,
-    env: input.env,
-    shell: false,
-    stdio: 'ignore',
-  });
-  child.on('error', (error: NodeJS.ErrnoException) => finish({ code: null, error }));
-  child.on('close', (code) => finish({ code, error: null }));
+  try {
+    const child = spawn(input.bin, input.args, {
+      cwd: input.cwd,
+      env: input.env,
+      shell: false,
+      stdio: 'ignore',
+    });
+    child.on('error', (error: NodeJS.ErrnoException) => finish({ code: null, error }));
+    child.on('close', (code) => finish({ code, error: null }));
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    finish({ code: null, error });
+  }
 });
 
 try {
